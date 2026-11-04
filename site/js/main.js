@@ -415,6 +415,51 @@
     io.observe(sec);
   }
 
+  // ---------- 07 · İmza Siteler: ekran sabit, katalog sağa doğru akar ----------
+  (() => {
+    const sec = $('.catalog');
+    if (!sec) return;
+    const viewport = $('.catalog__viewport', sec);
+    const track = $('.catalog__track', sec);
+    const cards = $$('.cat', sec);
+    const nums = $$('.catalog__track-n span', sec);
+    const bar = $('.catalog__bar i', sec);
+    const dist = () => Math.max(0, track.scrollWidth - viewport.clientWidth);
+    let active = 0;
+
+    // Sayaç ve çizgi, kaydırma anında değil animasyonun her karesinde güncellenir (yumuşak geçişte doğru kart)
+    const syncMeta = () => {
+      const x = gsap.getProperty(track, 'x');
+      const total = dist() || 1;
+      gsap.set(bar, { scaleX: Math.min(1, -x / total) });
+      const mid = viewport.clientWidth / 2 - x;
+      let best = 0, bestD = Infinity;
+      cards.forEach((c, i) => { const dd = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid); if (dd < bestD) { bestD = dd; best = i; } });
+      if (best !== active) { active = best; gsap.to(nums, { yPercent: -100 * best, duration: 0.6, ease: 'power3.out', overwrite: true }); }
+    };
+    const slide = gsap.fromTo(track, { x: 0 }, {
+      x: () => -dist(), ease: 'none', onUpdate: syncMeta,
+      scrollTrigger: {
+        trigger: sec, start: 'top top', end: () => `+=${dist()}`,
+        pin: '.catalog__pin', scrub: 0.6, invalidateOnRefresh: true,
+      },
+    });
+
+    // Görsel kart içinde hafif paralaks ile kayar; yazılar kart ekrana girerken bir kez açılır
+    cards.forEach((c, i) => {
+      gsap.fromTo($('.cat__media img', c), { xPercent: -5 }, {
+        xPercent: 5, ease: 'none',
+        scrollTrigger: { trigger: c, containerAnimation: slide, start: 'left right', end: 'right left', scrub: true },
+      });
+      const parts = [$('.cat__index', c), $('.cat__name', c), $('.cat__slogan', c), $('.cat__specs', c), $('.cat__thumbs', c), $('.cat__link', c)].filter(Boolean);
+      // İlk kart başlangıçta zaten ekranda: bölüm görünür olduğunda açılır; diğerleri yatay akışla
+      const st = i === 0
+        ? { trigger: sec, start: 'top 55%', once: true }
+        : { trigger: c, containerAnimation: slide, start: 'left 85%', once: true };
+      gsap.fromTo(parts, { y: 18, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 1, stagger: 0.06, ease: 'expo.out', scrollTrigger: st });
+    });
+  })();
+
   // ---------- 08 · Sözler: ilk söz başlangıçta görünür, diğerleri sırayla gelir ----------
   (() => {
     const quotes = $$('.quote');
