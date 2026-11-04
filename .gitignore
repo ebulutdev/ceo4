@@ -15,3 +15,7 @@ _tools/links.txt
 # Sistem
 .DS_Store
 Thumbs.db
+
+# Firebase
+.firebase/
+firebase-debug*.log

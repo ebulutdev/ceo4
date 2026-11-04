@@ -1,0 +1,13 @@
+{
+  "name": "umitfettahoglu-ceo3",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ümit Fettahoğlu — CEO & Founder sitesi (Firebase App Hosting)",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

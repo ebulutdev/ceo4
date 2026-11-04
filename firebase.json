@@ -1,0 +1,18 @@
+{
+  "apphosting": [
+    {
+      "backendId": "umitfettahoglu-ceo3",
+      "rootDir": "/",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "_src",
+        "_dl",
+        "_video",
+        "_tools",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ]
+}
