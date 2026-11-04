@@ -18,6 +18,7 @@
   let lenis = null;
   let menuOpen = false;
   let warmCity = null;
+  let filmPump = null;
 
   const intro = $('.intro');
 
@@ -87,15 +88,16 @@
       html.classList.remove('intro-lock');
       scrollTo(0, 0);
       lenis.start();
-      ScrollTrigger.refresh();
+      // Not: burada ScrollTrigger.refresh() çağrılmaz; perde açılırken tüm sahneleri yeniden ölçmek takılma yapıyordu.
+      // Konumlar fontlar yüklendiğinde zaten hesaplandı.
     }
 
     const tl = gsap.timeline({ onComplete: finish });
-    // İsim soldan sağa akıcı biçimde açılır; perde aralanırken kaydırma kilidi anında açılır
-    tl.from('.intro__label', { autoAlpha: 0, y: 8, letterSpacing: '0.85em', duration: 1.05 * k, ease: 'expo.out', delay: 0.08 })
+    // Yalnızca transform, opacity ve clip-path: her karede sayfa düzeni yeniden hesaplanmaz, yazı titremez.
+    tl.from('.intro__label', { autoAlpha: 0, y: 8, duration: 1.05 * k, ease: 'expo.out', delay: 0.08 })
       .fromTo(words,
-        { clipPath: 'inset(0% 100% 0% 0%)', letterSpacing: '0.1em', autoAlpha: 0.25 },
-        { clipPath: 'inset(0% 0% 0% 0%)', letterSpacing: '-0.01em', autoAlpha: 1, duration: 1.35 * k, stagger: 0.2 * k, ease: 'expo.inOut' },
+        { clipPath: 'inset(0% 100% 0% 0%)', x: -18, autoAlpha: 0.25 },
+        { clipPath: 'inset(0% 0% 0% 0%)', x: 0, autoAlpha: 1, duration: 1.35 * k, stagger: 0.2 * k, ease: 'expo.inOut' },
         `-=${0.75 * k}`)
       .from('.intro__role span', { autoAlpha: 0, y: 10, duration: 0.85 * k, stagger: 0.1 }, `-=${0.5 * k}`)
       .to(['.intro__content', '.intro__skip'], { autoAlpha: 0, y: -10, duration: 0.5, ease: 'power2.in' }, `+=${0.25 * k}`)
@@ -122,6 +124,7 @@
     function finish() {
       unlockScroll();
       intro.classList.add('is-done');
+      if (filmPump) filmPump();
       if (warmCity) setTimeout(warmCity, 700);
     }
   }
@@ -159,14 +162,37 @@
       }
       drawn = -1; draw();
     }
+    // Bellek: tüm kareler sıkıştırılmış <img> olarak tutulur; yalnızca o anki karenin çevresindeki
+    // küçük bir pencere çözülmüş bitmap olarak bellekte kalır (önceden 120 × ~8 MB tutuluyordu).
+    const WINDOW = isMob ? 6 : 10;
+    const bitmaps = new Map();
+    const pending = new Set();
+    function warmAround(c) {
+      if (typeof createImageBitmap !== 'function') return;
+      for (let k = -WINDOW; k <= WINDOW; k++) {
+        const i = c + k;
+        if (i < 0 || i >= cfg.n || !frames[i] || bitmaps.has(i) || pending.has(i)) continue;
+        pending.add(i);
+        createImageBitmap(frames[i], { resizeWidth: canvas.width || cfg.maxW, resizeQuality: 'medium' })
+          .then((b) => {
+            pending.delete(i);
+            if (Math.abs(i - want) > WINDOW + 2) { b.close(); return; }
+            bitmaps.set(i, b);
+            if (i === want) request();
+          }, () => pending.delete(i));
+      }
+      for (const [i, b] of bitmaps) if (Math.abs(i - c) > WINDOW + 2) { b.close(); bitmaps.delete(i); }
+    }
     function draw() {
       let i = -1;
       for (let k = 0; k < cfg.n && i < 0; k++) {
         if (frames[want + k]) i = want + k;
         else if (frames[want - k]) i = want - k;
       }
-      const im = frames[i];
-      if (!im || i === drawn) return;
+      if (i < 0) return;
+      warmAround(want);
+      if (i === drawn) return;
+      const im = bitmaps.get(i) || frames[i];
       const iw = im.width || im.naturalWidth;
       const ih = im.height || im.naturalHeight;
       const s = Math.max(canvas.width / iw, canvas.height / ih);
@@ -181,36 +207,29 @@
       const im = new Image();
       im.decoding = 'async';
       im.src = src(i);
-      const store = (bmp) => {
-        frames[i] = bmp || im;
+      const store = () => {
+        frames[i] = im;
         if (drawn < 0 || i === want || Math.abs(i - want) < Math.abs(drawn - want)) request();
       };
-      const onDecode = () => {
-        if (typeof createImageBitmap === 'function') {
-          createImageBitmap(im).then(store, () => store(im));
-        } else {
-          store(im);
-        }
-      };
-      (im.decode ? im.decode() : Promise.reject()).then(onDecode, () => { im.onload = onDecode; if (im.complete) onDecode(); });
+      (im.decode ? im.decode() : Promise.reject()).then(store, () => { im.onload = store; if (im.complete) store(); });
     }
 
-    // İlk kareleri (startF'ten başlayarak sırayla!) hemen çöz; ilk kaydırma anında 0 gecikme ve 0 kare atlama olsun
+    // Açılış sırasında yalnızca ilk kareler iner; kalanlar açılış bittikten sonra, tarayıcı boşta kaldıkça gelir.
     load(0);
-    for (let i = cfg.startF; i < Math.min(cfg.n, cfg.startF + 16); i++) load(i);
-    let nextIdx = cfg.startF + 16;
+    for (let i = cfg.startF; i < Math.min(cfg.n, cfg.startF + 10); i++) load(i);
+    let nextIdx = cfg.startF + 10;
     const pump = () => {
-      for (let n = 0; n < 6 && nextIdx < cfg.n; n++) load(nextIdx++);
+      for (let n = 0; n < 4 && nextIdx < cfg.n; n++) load(nextIdx++);
       for (let i = 1; i < cfg.startF; i++) load(i);
-      if (nextIdx < cfg.n) setTimeout(pump, 28);
+      if (nextIdx < cfg.n) (window.requestIdleCallback ? requestIdleCallback(pump, { timeout: 250 }) : setTimeout(pump, 60));
     };
-    setTimeout(pump, 40);
+    filmPump = pump;
 
     new ResizeObserver(fit).observe(canvas);
 
     const lines = $$('.film__name .mask > span', sec);
     const meta = [$('.film__eyebrow', sec), $('.film__role', sec)];
-    gsap.set(lines, { yPercent: 130 });
+    gsap.set(lines, { yPercent: 150 });
     gsap.set(meta, { autoAlpha: 0, y: 14 });
     gsap.set('.film__title', { autoAlpha: 0 });
     const obj = { f: cfg.startF };
@@ -229,7 +248,7 @@
       .fromTo(obj, { f: cfg.startF }, { f: cfg.n - 1, duration: 0.92, onUpdate: () => { want = Math.round(obj.f); request(); } }, 0)
       .fromTo('.film__shade', { opacity: 0 }, { opacity: 1, duration: 0.24 }, 0.52)
       .fromTo('.film__title', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.02, immediateRender: false }, 0.56)
-      .fromTo(lines, { yPercent: 130 }, { yPercent: 0, duration: 0.22, stagger: 0.04, ease: 'power3.out' }, 0.57)
+      .fromTo(lines, { yPercent: 150 }, { yPercent: 0, duration: 0.22, stagger: 0.04, ease: 'power3.out' }, 0.57)
       .fromTo(meta, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.16, stagger: 0.04, ease: 'power2.out' }, 0.66)
       .to({}, { duration: 0.08 });
   }
@@ -248,7 +267,7 @@
     chs.forEach((c, i) => {
       const p = parts(c);
       if (i) {
-        gsap.set(p.title, { yPercent: 130 });
+        gsap.set(p.title, { yPercent: 150 });
         gsap.set([p.tag, p.line], { autoAlpha: 0, y: 14 });
       }
     });
@@ -269,12 +288,12 @@
       const a = parts(chs[i - 1]), b = parts(chs[i]);
       const t = i - 0.35;
       tl.fromTo([a.tag, a.line], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.18 }, t)
-        .fromTo(a.title, { yPercent: 0 }, { yPercent: -130, duration: 0.22 }, t + 0.03)
+        .fromTo(a.title, { yPercent: 0 }, { yPercent: -150, duration: 0.22 }, t + 0.03)
         .set(chs[i - 1], { autoAlpha: 0 }, t + 0.26)
         .fromTo(imgs[i], { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.38 }, t + 0.06)
         .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.28 }, t + 0.08)
         .set(chs[i], { autoAlpha: 1 }, t + 0.26)
-        .fromTo(b.title, { yPercent: 130 }, { yPercent: 0, duration: 0.28 }, t + 0.28)
+        .fromTo(b.title, { yPercent: 150 }, { yPercent: 0, duration: 0.28 }, t + 0.28)
         .fromTo([b.tag, b.line], { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.04 }, t + 0.38);
     }
     tl.to({}, { duration: 0.45 });
@@ -291,7 +310,7 @@
     items.forEach((p, i) => {
       const q = parts(p);
       if (i) {
-        gsap.set(q.lines, { yPercent: 130 });
+        gsap.set(q.lines, { yPercent: 150 });
         gsap.set(q.line, { autoAlpha: 0, y: 14 });
       }
     });
@@ -309,11 +328,11 @@
       const a = parts(items[i - 1]), b = parts(items[i]);
       const t = i - 0.35;
       tl.fromTo(a.line, { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.16 }, t)
-        .fromTo(a.lines, { yPercent: 0 }, { yPercent: -130, duration: 0.22, stagger: 0.025 }, t + 0.03)
+        .fromTo(a.lines, { yPercent: 0 }, { yPercent: -150, duration: 0.22, stagger: 0.025 }, t + 0.03)
         .set(items[i - 1], { autoAlpha: 0 }, t + 0.26)
         .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.32 }, t + 0.06)
         .set(items[i], { autoAlpha: 1 }, t + 0.26)
-        .fromTo(b.lines, { yPercent: 130 }, { yPercent: 0, duration: 0.28, stagger: 0.035 }, t + 0.28)
+        .fromTo(b.lines, { yPercent: 150 }, { yPercent: 0, duration: 0.28, stagger: 0.035 }, t + 0.28)
         .fromTo(b.line, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.2 }, t + 0.4);
     }
     tl.to({}, { duration: 0.45 });
@@ -355,8 +374,8 @@
         }
       });
 
-      gsap.to(words[prev], { yPercent: -130 * dir, autoAlpha: 0, duration: 0.45, ease: 'power3.inOut', overwrite: true });
-      gsap.fromTo(words[n], { yPercent: 130 * dir, autoAlpha: 0 }, { yPercent: 0, autoAlpha: 1, duration: 0.5, ease: 'power3.out', overwrite: true });
+      gsap.to(words[prev], { yPercent: -150 * dir, autoAlpha: 0, duration: 0.45, ease: 'power3.inOut', overwrite: true });
+      gsap.fromTo(words[n], { yPercent: 150 * dir, autoAlpha: 0 }, { yPercent: 0, autoAlpha: 1, duration: 0.5, ease: 'power3.out', overwrite: true });
       gsap.to(descs[prev], { autoAlpha: 0, y: -6 * dir, duration: 0.24, ease: 'power2.in', overwrite: true });
       gsap.fromTo(descs[n], { autoAlpha: 0, y: 8 * dir }, { autoAlpha: 1, y: 0, duration: 0.4, delay: 0.14, ease: 'power2.out', overwrite: true });
     }
@@ -408,7 +427,7 @@
     gsap.set(caps[0], { autoAlpha: 1, y: 0 });
 
     gsap.set(quotes.slice(1), { autoAlpha: 0 });
-    gsap.set(sets.slice(1).flat(), { yPercent: 130 });
+    gsap.set(sets.slice(1).flat(), { yPercent: 150 });
     gsap.set(caps.slice(1), { autoAlpha: 0, y: 10 });
 
     const tl = gsap.timeline({
@@ -422,11 +441,11 @@
     });
     tl.to({}, { duration: 0.45 });
     for (let i = 1; i < quotes.length; i++) {
-      tl.fromTo(sets[i - 1], { yPercent: 0 }, { yPercent: -130, duration: 0.45, stagger: 0.015 })
+      tl.fromTo(sets[i - 1], { yPercent: 0 }, { yPercent: -150, duration: 0.45, stagger: 0.015 })
         .fromTo(caps[i - 1], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -8, duration: 0.24 }, '<')
         .set(quotes[i - 1], { autoAlpha: 0 })
         .set(quotes[i], { autoAlpha: 1 })
-        .fromTo(sets[i], { yPercent: 130 }, { yPercent: 0, duration: 0.55, stagger: 0.022 })
+        .fromTo(sets[i], { yPercent: 150 }, { yPercent: 0, duration: 0.55, stagger: 0.022 })
         .fromTo(caps[i], { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.28 }, '<0.22')
         .to({}, { duration: 0.5 });
     }

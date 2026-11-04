@@ -87,10 +87,10 @@ html.lenis, html.lenis body { height: auto; }
 .pafta--light { color: rgba(255, 255, 255, .5); }
 
 .word { display: inline-block; vertical-align: top; }
-.word:has(> .wi) { overflow: hidden; padding: .08em 0 .22em; margin: -.08em 0 -.22em; }
-.word > .wi { display: inline-block; will-change: transform; }
-.mask { display: block; overflow: hidden; padding: .08em 0 .2em; margin: -.08em 0 -.2em; }
-.mask > span { display: block; will-change: transform; }
+.word:has(> .wi) { overflow: hidden; padding: .2em 0 .22em; margin: -.2em 0 -.22em; }
+.word > .wi { display: inline-block; }
+.mask { display: block; overflow: hidden; padding: .2em 0 .2em; margin: -.2em 0 -.2em; }
+.mask > span { display: block; }
 
 /* ---------- Açılış ---------- */
 .intro { display: none; }
@@ -282,7 +282,7 @@ html.lenis, html.lenis body { height: auto; }
 .story { position: relative; background: var(--anthracite); color: var(--white); }
 .story__pin { position: relative; height: 100svh; min-height: 540px; overflow: hidden; }
 .story__media, .story__img { position: absolute; inset: 0; }
-.story__img { overflow: hidden; will-change: clip-path; }
+.story__img { overflow: hidden; }
 .story__img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 26%; will-change: transform; }
 .story__shade {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
