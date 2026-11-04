@@ -1,0 +1,17 @@
+# Bağımlılıklar (site/assets/vendor içine kopyalanmış halleri repoda)
+node_modules/
+
+# Ham kaynaklar: orijinal fotoğraflar, indirilen dosyalar, ham video
+_src/
+_dl/
+_video/
+
+# Araç çıktıları
+_tools/gfonts.css
+_tools/fontlist.json
+_tools/fonturls.txt
+_tools/links.txt
+
+# Sistem
+.DS_Store
+Thumbs.db

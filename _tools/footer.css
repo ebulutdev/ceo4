@@ -1,0 +1,88 @@
+/* ---------- Footer ---------- */
+.footer { position: relative; background: var(--anthracite); color: var(--silver); padding: clamp(88px, 14vh, 150px) 0 0; overflow: hidden; }
+.footer a { transition: color .45s var(--ease); }
+
+/* Kapanış çağrısı */
+.fcta { padding-bottom: clamp(64px, 10vh, 110px); border-bottom: 1px solid var(--line-dark); }
+.fcta__title { margin-top: 22px; font-family: var(--serif); font-weight: 400; font-size: clamp(2.6rem, 10.5vw, 7.2rem); line-height: 1; letter-spacing: -.02em; color: var(--white); }
+.fcta__title em { color: var(--silver); }
+.fcta__actions { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 12px; }
+.fbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  min-height: 54px; padding: 0 28px; border: 1px solid rgba(255, 255, 255, .24); border-radius: 999px;
+  font-size: 11px; font-weight: 500; letter-spacing: .24em; text-transform: uppercase; color: var(--white);
+  transition: background .5s var(--ease), color .5s var(--ease), border-color .5s;
+}
+.fbtn:hover { border-color: var(--white); }
+.fbtn--solid { background: var(--white); color: var(--ink); border-color: var(--white); }
+.fbtn--solid:hover { background: transparent; color: var(--white); }
+
+/* İmza + bağlantılar */
+.fmain { display: grid; gap: 56px; padding: clamp(56px, 9vh, 96px) 0; border-bottom: 1px solid var(--line-dark); }
+.fsign__mono { display: inline-grid; place-items: center; width: 52px; height: 52px; border: 1px solid rgba(255, 255, 255, .35); font-family: var(--serif); font-size: 19px; color: var(--white); }
+.fsign__name { margin-top: 22px; font-family: var(--serif); font-size: 28px; color: var(--white); line-height: 1.1; }
+.fsign__role { margin-top: 10px; font-size: 10.5px; letter-spacing: .24em; text-transform: uppercase; line-height: 1.9; color: var(--steel); }
+.fsign__quote { margin-top: 22px; max-width: 26ch; font-family: var(--serif); font-style: italic; font-size: 17px; line-height: 1.45; color: var(--silver); }
+.flinks { display: grid; grid-template-columns: 1fr 1fr; gap: 44px 24px; }
+.fcol__h { display: block; font-family: var(--sans); font-size: 10px; font-weight: 500; letter-spacing: .3em; text-transform: uppercase; color: var(--steel); margin-bottom: 18px; }
+.fcol ul { display: grid; gap: 4px; }
+.fcol li a, .fcol__muted { position: relative; display: inline-flex; align-items: center; min-height: 34px; font-size: 15px; color: var(--platinum); overflow-wrap: anywhere; }
+.fcol li a::after { content: ""; position: absolute; left: 0; right: 0; bottom: 6px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: right; transition: transform .7s var(--ease); }
+.fcol li a:hover { color: var(--white); }
+.fcol li a:hover::after { transform: scaleX(1); transform-origin: left; }
+.fcol li a.ext::before { content: "↗"; order: 2; margin-left: 6px; font-size: 11px; color: var(--steel); transition: transform .5s var(--ease), color .4s; }
+.fcol li a.ext:hover::before { transform: translate(2px, -2px); color: var(--white); }
+.fcol__muted { color: var(--steel); cursor: default; }
+.fcol__muted small { margin-left: 8px; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; }
+
+/* Ofisler */
+.foffices { display: grid; border-bottom: 1px solid var(--line-dark); }
+.office { display: grid; gap: 6px; padding: 26px 0; border-top: 1px solid var(--line-dark); }
+.office:first-child { border-top: 0; }
+.office__k { font-size: 10px; font-weight: 500; letter-spacing: .3em; text-transform: uppercase; color: var(--steel); }
+.office__a { font-family: var(--serif); font-size: 19px; line-height: 1.4; color: var(--platinum); transition: color .4s; }
+.office__go { margin-top: 4px; font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--steel); transition: color .4s, transform .6s var(--ease); }
+.office:hover .office__a, .office:hover .office__go { color: var(--white); }
+
+/* Sosyal */
+.fsocial { display: flex; flex-direction: column; gap: 4px; padding: 36px 0; border-bottom: 1px solid var(--line-dark); }
+.fsocial .fcol__h { margin-bottom: 12px; }
+.fsocial ul { display: flex; flex-wrap: wrap; gap: 10px; }
+.fpill {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px;
+  border: 1px solid rgba(255, 255, 255, .16); border-radius: 999px;
+  font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--platinum);
+  transition: background .5s var(--ease), color .5s var(--ease), border-color .5s;
+}
+.fpill:hover { background: var(--white); color: var(--ink); border-color: var(--white); }
+
+/* Alt çubuk */
+.fbar { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; padding: 26px 0 calc(26px + env(safe-area-inset-bottom)); font-size: 12px; color: var(--steel); }
+.fbar__legal { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.fbar__legal a { min-height: 36px; display: inline-flex; align-items: center; color: var(--silver); }
+.fbar__legal a:hover { color: var(--white); }
+.ftop { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 50%; color: var(--white); font-size: 16px; transition: background .5s var(--ease), color .5s; }
+.ftop:hover { background: var(--white); color: var(--ink); }
+
+/* Kırpılmış dev imza */
+.fmark {
+  margin: 0 0 -.2em; padding: 0 var(--gutter);
+  font-family: var(--serif); font-size: clamp(5.4rem, 27vw, 26rem); line-height: .8; letter-spacing: -.04em;
+  color: rgba(255, 255, 255, .05); white-space: nowrap; text-align: center; pointer-events: none; user-select: none;
+}
+
+@media (min-width: 768px) {
+  .flinks { grid-template-columns: repeat(4, 1fr); }
+  .foffices { grid-template-columns: repeat(3, 1fr); }
+  .office { padding: 32px 32px 32px 0; border-top: 0; }
+  .office + .office { padding-left: 32px; border-left: 1px solid var(--line-dark); }
+  .fsocial { flex-direction: row; align-items: center; justify-content: space-between; }
+  .fsocial .fcol__h { margin-bottom: 0; }
+}
+@media (min-width: 1100px) {
+  .fmain { grid-template-columns: 4fr 8fr; gap: 6vw; }
+  .fcta { display: grid; grid-template-columns: 1fr auto; align-items: end; column-gap: 48px; }
+  .fcta .eyebrow { grid-column: 1 / -1; }
+  .fcta__actions { margin-top: 0; }
+}
+
