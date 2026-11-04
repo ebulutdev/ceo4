@@ -68,9 +68,9 @@
   const cursor = $('.cursor');
 
   // ---------- Açılış ----------
-  const filmMedia = ['.film__poster img', '.film__canvas'];
   gsap.set('.film__cue', { autoAlpha: 0 });
   gsap.set(header, { autoAlpha: 0 });
+  let introDone = false;
 
   function runIntro() {
     let seen = false;
@@ -78,7 +78,7 @@
     scrollTo(0, 0);
     lenis.stop();
     const words = $$('.intro__name .intro__w');
-    const k = seen ? 0.38 : 0.72;
+    const k = seen ? 0.45 : 0.72;
     let unlocked = false;
 
     function unlockScroll() {
@@ -86,33 +86,34 @@
       unlocked = true;
       intro.style.pointerEvents = 'none';
       html.classList.remove('intro-lock');
-      scrollTo(0, 0);
       lenis.start();
-      // Not: burada ScrollTrigger.refresh() çağrılmaz; perde açılırken tüm sahneleri yeniden ölçmek takılma yapıyordu.
-      // Konumlar fontlar yüklendiğinde zaten hesaplandı.
+      if (filmPump) filmPump();
     }
 
     const tl = gsap.timeline({ onComplete: finish });
-    // Yalnızca transform, opacity ve clip-path: her karede sayfa düzeni yeniden hesaplanmaz, yazı titremez.
-    tl.from('.intro__label', { autoAlpha: 0, y: 8, duration: 1.05 * k, ease: 'expo.out', delay: 0.08 })
+    // Saf GPU transform + opacity: clip-path veya tam ekran canvas scale kullanılmaz, sıfır kare düşüşü.
+    tl.fromTo('.intro__label',
+        { autoAlpha: 0, y: 12 },
+        { autoAlpha: 1, y: 0, duration: 0.65 * k, ease: 'power3.out' }, 0.04)
       .fromTo(words,
-        { clipPath: 'inset(0% 100% 0% 0%)', x: -18, autoAlpha: 0.25 },
-        { clipPath: 'inset(0% 0% 0% 0%)', x: 0, autoAlpha: 1, duration: 1.35 * k, stagger: 0.2 * k, ease: 'expo.inOut' },
-        `-=${0.75 * k}`)
-      .from('.intro__role span', { autoAlpha: 0, y: 10, duration: 0.85 * k, stagger: 0.1 }, `-=${0.5 * k}`)
-      .to(['.intro__content', '.intro__skip'], { autoAlpha: 0, y: -10, duration: 0.5, ease: 'power2.in' }, `+=${0.25 * k}`)
-      .to('.intro__panel--l', { xPercent: -101, duration: 1.05, ease: 'power4.inOut' }, '-=0.08')
-      .to('.intro__panel--r', { xPercent: 101, duration: 1.05, ease: 'power4.inOut' }, '<')
-      .add(unlockScroll, '<0.35')
-      .fromTo(filmMedia, { scale: 1.08 }, { scale: 1, duration: 1.15, ease: 'power3.out' }, '<')
-      .to('.film__cue', { autoAlpha: 1, duration: 0.7 }, '<0.25')
-      .to(header, { autoAlpha: 1, duration: 0.7 }, '<');
+        { autoAlpha: 0, y: 24 },
+        { autoAlpha: 1, y: 0, duration: 0.85 * k, stagger: 0.14 * k, ease: 'power3.out' }, 0.12)
+      .fromTo('.intro__role',
+        { autoAlpha: 0, y: 12 },
+        { autoAlpha: 1, y: 0, duration: 0.65 * k, ease: 'power3.out' }, `-=${0.52 * k}`)
+      .to(['.intro__content', '.intro__skip'],
+        { autoAlpha: 0, y: -12, duration: 0.36, ease: 'power2.in' }, `+=${0.28 * k}`)
+      .to('.intro__panel--l', { xPercent: -101, duration: 0.82, ease: 'expo.inOut', force3D: true }, '-=0.06')
+      .to('.intro__panel--r', { xPercent: 101, duration: 0.82, ease: 'expo.inOut', force3D: true }, '<')
+      .add(unlockScroll, '<0.28')
+      .to('.film__cue', { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<0.18')
+      .to(header, { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<');
 
     let skipped = false;
     const skip = () => {
       if (skipped) return;
       skipped = true;
-      tl.timeScale(4.5);
+      tl.timeScale(3.8);
       unlockScroll();
     };
     $('.intro__skip').addEventListener('click', skip, { once: true });
@@ -122,16 +123,19 @@
     addEventListener('touchmove', skip, { once: true, passive: true });
 
     function finish() {
+      introDone = true;
       unlockScroll();
       intro.classList.add('is-done');
-      if (filmPump) filmPump();
       if (warmCity) setTimeout(warmCity, 700);
     }
   }
 
-  const fontList = ['400 1em "Bodoni Moda"', 'italic 400 1em "Bodoni Moda"', '400 1em Jost'];
-  const fontsReady = d.fonts ? Promise.race([Promise.all(fontList.map((f) => d.fonts.load(f))), new Promise((r) => setTimeout(r, 1200))]) : Promise.resolve();
-  fontsReady.then(() => { ScrollTrigger.refresh(); runIntro(); });
+  const fontList = ['500 1em "Cormorant Garamond"', 'italic 500 1em "Cormorant Garamond"', '400 1em Jost'];
+  const fontsReady = d.fonts ? Promise.race([Promise.all(fontList.map((f) => d.fonts.load(f))), new Promise((r) => setTimeout(r, 350))]) : Promise.resolve();
+  fontsReady.then(() => {
+    ScrollTrigger.refresh();
+    requestAnimationFrame(() => requestAnimationFrame(runIntro));
+  });
 
   // ======================================================================
   // 1. ÖNCE TÜM SABİTLENEN (PIN) SAHNELER OLUŞTURULUR (DOM SIRASIYLA)
@@ -214,14 +218,21 @@
       (im.decode ? im.decode() : Promise.reject()).then(store, () => { im.onload = store; if (im.complete) store(); });
     }
 
-    // Açılış sırasında yalnızca ilk kareler iner; kalanlar açılış bittikten sonra, tarayıcı boşta kaldıkça gelir.
+    // Açılış animasyonu oynarken ana iş parçacığını yormamak için yalnızca ilk kare hazırlanır;
+    // diğer kareler perde açılırken (unlockScroll) arka planda sırayla çözülür.
     load(0);
-    for (let i = cfg.startF; i < Math.min(cfg.n, cfg.startF + 10); i++) load(i);
-    let nextIdx = cfg.startF + 10;
+    load(cfg.startF);
+    let nextIdx = cfg.startF + 1;
+    let pumping = false;
     const pump = () => {
-      for (let n = 0; n < 4 && nextIdx < cfg.n; n++) load(nextIdx++);
-      for (let i = 1; i < cfg.startF; i++) load(i);
-      if (nextIdx < cfg.n) (window.requestIdleCallback ? requestIdleCallback(pump, { timeout: 250 }) : setTimeout(pump, 60));
+      if (pumping) return;
+      pumping = true;
+      const step = () => {
+        for (let n = 0; n < 4 && nextIdx < cfg.n; n++) load(nextIdx++);
+        for (let i = 1; i < cfg.startF; i++) load(i);
+        if (nextIdx < cfg.n) (window.requestIdleCallback ? requestIdleCallback(step, { timeout: 200 }) : setTimeout(step, 50));
+      };
+      step();
     };
     filmPump = pump;
 
@@ -287,14 +298,14 @@
     for (let i = 1; i < chs.length; i++) {
       const a = parts(chs[i - 1]), b = parts(chs[i]);
       const t = i - 0.35;
-      tl.fromTo([a.tag, a.line], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.18 }, t)
-        .fromTo(a.title, { yPercent: 0 }, { yPercent: -150, duration: 0.22 }, t + 0.03)
-        .set(chs[i - 1], { autoAlpha: 0 }, t + 0.26)
-        .fromTo(imgs[i], { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.38 }, t + 0.06)
-        .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.28 }, t + 0.08)
-        .set(chs[i], { autoAlpha: 1 }, t + 0.26)
-        .fromTo(b.title, { yPercent: 150 }, { yPercent: 0, duration: 0.28 }, t + 0.28)
-        .fromTo([b.tag, b.line], { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.04 }, t + 0.38);
+      tl.fromTo([a.tag, a.line], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.16 }, t)
+        .fromTo(a.title, { yPercent: 0 }, { yPercent: -150, duration: 0.22 }, t + 0.02)
+        .set(chs[i - 1], { autoAlpha: 0 }, t + 0.24)
+        .fromTo(imgs[i], { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.36 }, t + 0.04)
+        .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.28 }, t + 0.06)
+        .set(chs[i], { autoAlpha: 1 }, t + 0.14)
+        .fromTo(b.title, { yPercent: 150 }, { yPercent: 0, duration: 0.28 }, t + 0.14)
+        .fromTo([b.tag, b.line], { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.04 }, t + 0.26);
     }
     tl.to({}, { duration: 0.45 });
   })();
@@ -324,16 +335,17 @@
         invalidateOnRefresh: true,
       },
     });
+    tl.to({}, { duration: 0.45 }, 0);
     for (let i = 1; i < items.length; i++) {
       const a = parts(items[i - 1]), b = parts(items[i]);
       const t = i - 0.35;
-      tl.fromTo(a.line, { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.16 }, t)
-        .fromTo(a.lines, { yPercent: 0 }, { yPercent: -150, duration: 0.22, stagger: 0.025 }, t + 0.03)
-        .set(items[i - 1], { autoAlpha: 0 }, t + 0.26)
-        .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.32 }, t + 0.06)
-        .set(items[i], { autoAlpha: 1 }, t + 0.26)
-        .fromTo(b.lines, { yPercent: 150 }, { yPercent: 0, duration: 0.28, stagger: 0.035 }, t + 0.28)
-        .fromTo(b.line, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.2 }, t + 0.4);
+      tl.fromTo(a.line, { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.15 }, t)
+        .fromTo(a.lines, { yPercent: 0 }, { yPercent: -150, duration: 0.22, stagger: 0.025 }, t + 0.02)
+        .set(items[i - 1], { autoAlpha: 0 }, t + 0.25)
+        .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.28 }, t + 0.05)
+        .set(items[i], { autoAlpha: 1 }, t + 0.14)
+        .fromTo(b.lines, { yPercent: 150 }, { yPercent: 0, duration: 0.28, stagger: 0.03 }, t + 0.14)
+        .fromTo(b.line, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.2 }, t + 0.26);
     }
     tl.to({}, { duration: 0.45 });
   })();
@@ -446,18 +458,12 @@
       },
     });
 
-    // Görsel kart içinde hafif paralaks ile kayar; yazılar kart ekrana girerken bir kez açılır
-    cards.forEach((c, i) => {
-      gsap.fromTo($('.cat__media img', c), { xPercent: -5 }, {
-        xPercent: 5, ease: 'none',
+    // Görsel kart içinde hafif paralaks ile kayar; kart metinleri her zaman görünür ve net kalır
+    cards.forEach((c) => {
+      gsap.fromTo($('.cat__media img', c), { xPercent: -4 }, {
+        xPercent: 4, ease: 'none',
         scrollTrigger: { trigger: c, containerAnimation: slide, start: 'left right', end: 'right left', scrub: true },
       });
-      const parts = [$('.cat__index', c), $('.cat__name', c), $('.cat__slogan', c), $('.cat__specs', c), $('.cat__thumbs', c), $('.cat__link', c)].filter(Boolean);
-      // İlk kart başlangıçta zaten ekranda: bölüm görünür olduğunda açılır; diğerleri yatay akışla
-      const st = i === 0
-        ? { trigger: sec, start: 'top 55%', once: true }
-        : { trigger: c, containerAnimation: slide, start: 'left 85%', once: true };
-      gsap.fromTo(parts, { y: 18, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 1, stagger: 0.06, ease: 'expo.out', scrollTrigger: st });
     });
   })();
 
@@ -504,7 +510,7 @@
   // ---------- 01 · Manifesto: okuyucu cümleyi kaydırarak yazar ----------
   $$('[data-scrub-words]').forEach((p) => {
     const words = new SplitType(p, { types: 'words' }).words;
-    gsap.set(words, { opacity: 0.22 });
+    gsap.set(words, { opacity: 0.34 });
     gsap.to(words, {
       opacity: 1, ease: 'none', stagger: 0.08,
       scrollTrigger: { trigger: p, start: 'top 90%', end: 'center 52%', scrub: 0.2 },
@@ -714,15 +720,15 @@
     });
   });
 
-  ScrollTrigger.sort();
-
   initMenu();
   initForm();
   initAnchors();
   if (fine) { initCursor(); initMagnetic(); }
 
-  // Görseller geç yüklendiğinde konumları tazele
-  addEventListener('load', () => ScrollTrigger.refresh());
+  // Görseller geç yüklendiğinde konumları tazele (açılış animasyonu oynarken araya girip takılma yapmasın)
+  addEventListener('load', () => {
+    if (introDone) ScrollTrigger.refresh();
+  });
 
   // ======================================================================
   function initAnchors() {
@@ -761,6 +767,7 @@
       });
     });
 
+    let menuTl = null;
     function openMenu() {
       menuOpen = true;
       menu.hidden = false;
@@ -768,24 +775,26 @@
       btn.setAttribute('aria-expanded', 'true');
       label.textContent = label.dataset.close;
       lenis && lenis.stop();
-      if (!hasGsap || reduce) { menu.style.clipPath = 'none'; $('a', menu).focus(); return; }
-      gsap.timeline()
-        .fromTo(menu, { clipPath: 'inset(0% 0% 100% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.95, ease: 'power4.inOut' })
-        .fromTo(items, { yPercent: 125 }, { yPercent: 0, duration: 1.05, stagger: 0.06 }, 0.38)
-        .fromTo(extras, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8, stagger: 0.03 }, 0.6)
-        .fromTo(preview, { scale: 1.12 }, { scale: 1, duration: 1.8 }, 0.15)
-        .add(() => $('a', menu).focus({ preventScroll: true }), 0.55);
+      if (menuTl) menuTl.kill();
+      if (!hasGsap || reduce) { gsap.set(menu, { autoAlpha: 1 }); gsap.set([items, extras], { clearProps: 'all' }); $('a', menu).focus(); return; }
+      menuTl = gsap.timeline({ defaults: { ease: 'power3.out' } })
+        .fromTo(menu, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.26, ease: 'power2.out' }, 0)
+        .fromTo(extras, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.36, stagger: 0.015 }, 0.04)
+        .fromTo(items, { yPercent: 40, autoAlpha: 0 }, { yPercent: 0, autoAlpha: 1, duration: 0.44, stagger: 0.032 }, 0.04)
+        .fromTo(preview, { scale: 1.06, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.65 }, 0.04)
+        .add(() => $('a', menu).focus({ preventScroll: true }), 0.25);
     }
     function close(cb) {
       menuOpen = false;
       btn.setAttribute('aria-expanded', 'false');
       label.textContent = label.dataset.open;
       html.classList.remove('menu-open');
+      if (menuTl) menuTl.kill();
       const done = () => { menu.hidden = true; lenis && lenis.start(); cb && cb(); };
       if (!hasGsap || reduce) { done(); return; }
-      gsap.timeline({ onComplete: done })
-        .to(items, { yPercent: -125, duration: 0.5, stagger: 0.025, ease: 'power3.in' })
-        .to(menu, { clipPath: 'inset(0% 0% 100% 0%)', duration: 0.75, ease: 'power4.inOut' }, 0.15);
+      menuTl = gsap.timeline({ onComplete: done })
+        .to([items, extras], { y: -10, autoAlpha: 0, duration: 0.18, ease: 'power2.in' }, 0)
+        .to(menu, { autoAlpha: 0, duration: 0.24, ease: 'power2.inOut' }, 0.06);
     }
     window.__closeMenu = close;
   }

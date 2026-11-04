@@ -295,18 +295,54 @@ export async function createCity(host, { mobile = false, logoUrl }) {
   crown.traverse((o) => { if (o.isMesh) o.castShadow = !mobile; });
   tower.add(crown);
 
-  // ---- FETSAN GRUP tabelası (orijinal logo, ön ve arka cephe) ----
+  // ---- FETSAN GRUP tabelası (orijinal logo, koyu tabela üzerinde yüksek kontrastlı) ----
   const signs = new THREE.Group();
-  const logoTex = await new THREE.TextureLoader().loadAsync(logoUrl);
-  logoTex.colorSpace = THREE.SRGBColorSpace;
-  logoTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const aspect = logoTex.image.width / logoTex.image.height;
+  const rawLogoTex = await new THREE.TextureLoader().loadAsync(logoUrl);
+  const logoTex = (() => {
+    const img = rawLogoTex.image;
+    const w = img.width, h = img.height;
+    const src = document.createElement('canvas');
+    src.width = w; src.height = h;
+    const sctx = src.getContext('2d');
+    sctx.drawImage(img, 0, 0);
+    const id = sctx.getImageData(0, 0, w, h);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (a < 8) { d[i + 3] = 0; continue; }
+      const r = d[i], b = d[i + 2];
+      if (r - b > 45) {
+        // Altın bina ikonu, "FETSAN GRUP" ve elmas (◆)
+        d[i] = 240; d[i + 1] = 200; d[i + 2] = 48;
+        d[i + 3] = Math.min(255, Math.round(Math.pow(a / 255, 0.72) * 255));
+      } else {
+        // Orijinal PNG'de siyah olan yatay çizgi ve "FETTAHOĞLU YAPI · AST MİMARLIK" yazısını
+        // koyu tabela üzerinde net okunması için parlak platin/beyaza çevir ve ince vuruşları güçlendir
+        d[i] = 244; d[i + 1] = 242; d[i + 2] = 236;
+        d[i + 3] = Math.min(255, Math.round(Math.pow(a / 255, 0.52) * 255));
+      }
+    }
+    sctx.putImageData(id, 0, 0);
+    const out = document.createElement('canvas');
+    out.width = w * 4; out.height = h * 4;
+    const octx = out.getContext('2d');
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+    octx.drawImage(src, 0, 0, out.width, out.height);
+    const tex = new THREE.CanvasTexture(out);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    rawLogoTex.dispose();
+    return tex;
+  })();
+  const aspect = rawLogoTex.image.width / rawLogoTex.image.height;
   const LW = 15, LH = LW / aspect;
   const logoMat = new THREE.MeshStandardMaterial({
-    map: logoTex, transparent: true, alphaTest: 0.35, metalness: 0.6, roughness: 0.32,
-    emissive: 0xffffff, emissiveMap: logoTex, emissiveIntensity: 0,
+    map: logoTex, transparent: true, alphaTest: 0.04, depthWrite: false,
+    metalness: 0.22, roughness: 0.36,
+    emissive: 0xffffff, emissiveMap: logoTex, emissiveIntensity: 0.28,
   });
-  const reliefMat = new THREE.MeshBasicMaterial({ map: logoTex, color: 0x000000, transparent: true, opacity: 0.6, alphaTest: 0.35 });
+  const reliefMat = new THREE.MeshBasicMaterial({ map: logoTex, color: 0x000000, transparent: true, opacity: 0.55, alphaTest: 0.08, depthWrite: false });
   const signY = SLAB_TOP + (N - 2) * FH + FH * 0.55;
   for (const side of [1, -1]) {
     const s = new THREE.Group();
@@ -522,7 +558,7 @@ export async function createCity(host, { mobile = false, logoUrl }) {
 
     // Final: tabela ve kent ışıkları
     const glow = smooth((p - 0.84) / 0.07);
-    logoMat.emissiveIntensity = glow * 0.55;
+    logoMat.emissiveIntensity = 0.28 + glow * 0.52;
     signLight.intensity = mobile ? 0 : glow * 220;
     M.core.emissiveIntensity = 0.08 + smooth((p - 0.8) / 0.12) * 0.9;
     cityMat.emissiveIntensity = 0.05 + smooth((p - 0.82) / 0.14) * 0.85;

@@ -26,17 +26,18 @@
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
-  <link rel="preload" href="assets/fonts/aFTQ7PxzY382XsXX63LUYJSKSKg.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="assets/fonts/aFTB7PxzY382XsXX63LUYJSPUqb0qojSAq1rZLktbNxSXgM.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/cormorant-500-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/cormorant-500-latin-ext.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/cormorant-500i-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/92zatBhPNqw73oTd4g.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/fonts.css?v=c1a22027">
+  <link rel="stylesheet" href="css/fonts.css?v=30c12399">
 
   <link rel="preload" as="image" type="image/webp" media="(max-width: 767px)" href="assets/film/m/001.webp">
   <link rel="preload" as="image" type="image/webp" media="(min-width: 768px)" href="assets/film/d/001.webp">
 
   <script>document.documentElement.classList.add('js')</script>
   <script type="importmap">{ "imports": { "three": "./assets/vendor/three/three.module.min.js" } }</script>
-  <link rel="stylesheet" href="css/style.css?v=efc49c42">
+  <link rel="stylesheet" href="css/style.css?v=07d2bf09">
 
   <script type="application/ld+json">
   {
@@ -133,7 +134,7 @@
         <a href="mailto:umitfettahoglu@fetsangrup.com">umitfettahoglu@fetsangrup.com</a>
       </div>
     </div>
-    <div class="menu__preview" aria-hidden="true"><img alt="" src="assets/img/chesterfield-dikey-1080.webp" width="1080" height="1920"></div>
+    <div class="menu__preview" aria-hidden="true"><img alt="" src="assets/img/chesterfield-dikey-1080.webp" width="1080" height="1920" loading="lazy" decoding="async"></div>
   </div>
 
   <div class="progress" aria-hidden="true"><span class="progress__bar"></span><span class="progress__num">00</span></div>
@@ -275,7 +276,14 @@
               </li>
             </ol>
           </div>
-          <p class="lead__values">Güven · Şeffaflık · Temiz İşçilik · İş Güvenliği · Kalite · Sürdürülebilir Büyüme</p>
+          <ul class="lead__values" aria-label="Kurumsal değerler">
+            <li>Güven</li>
+            <li>Şeffaflık</li>
+            <li>Temiz İşçilik</li>
+            <li>İş Güvenliği</li>
+            <li>Kalite</li>
+            <li>Sürdürülebilir Büyüme</li>
+          </ul>
         </div>
       </div>
     </section>
@@ -386,7 +394,7 @@
             <h2 class="catalog__title">Apartman değil, <em>yaşam alanı.</em></h2>
           </div>
           <div class="catalog__meta" aria-hidden="true">
-            <p class="catalog__count"><span class="catalog__track-n"><span>01</span><span>02</span><span>03</span></span><span class="catalog__total">/ 03</span></p>
+            <p class="catalog__count"><span class="catalog__track-n"><span>01</span><span>02</span></span><span class="catalog__total">/ 02</span></p>
             <span class="catalog__bar"><i></i></span>
           </div>
         </div>
@@ -397,9 +405,9 @@
             <article class="cat">
               <a class="cat__media" href="https://fetsangrup.com/nevbahar" target="_blank" rel="noopener" data-cursor="İncele" aria-label="Nevbahar Konakları proje sayfası">
                 <picture>
-                  <source type="image/avif" srcset="assets/img/cat-nev-main-900.avif 900w, assets/img/cat-nev-main-1055.avif 1055w" sizes="(min-width: 1024px) 46vw, 86vw">
-                  <source type="image/webp" srcset="assets/img/cat-nev-main-900.webp 900w, assets/img/cat-nev-main-1055.webp 1055w" sizes="(min-width: 1024px) 46vw, 86vw">
-                  <img src="assets/img/cat-nev-main-1055.jpg" width="1055" height="611" loading="lazy" decoding="async" alt="Nevbahar Konakları, A, B ve C blokları gün batımında">
+                  <source type="image/avif" srcset="assets/img/proje-nevbahar-800.avif 800w, assets/img/proje-nevbahar-1600.avif 1600w" sizes="(min-width: 1024px) 46vw, 86vw">
+                  <source type="image/webp" srcset="assets/img/proje-nevbahar-800.webp 800w, assets/img/proje-nevbahar-1600.webp 1600w" sizes="(min-width: 1024px) 46vw, 86vw">
+                  <img src="assets/img/proje-nevbahar-1600.jpg" width="1600" height="927" loading="lazy" decoding="async" alt="Nevbahar Konakları, A, B ve C blokları">
                 </picture>
                 <span class="cat__status">Satışta</span>
               </a>
@@ -414,39 +422,7 @@
                   <div><dt>Yaşam alanı</dt><dd>17.500 m²</dd></div>
                   <div><dt>Tipler</dt><dd>1+1 · 2+1 · 3+1</dd></div>
                 </dl>
-                <div class="cat__thumbs" aria-hidden="true">
-                  <picture><source type="image/webp" srcset="assets/img/cat-nev-a-640.webp 640w, assets/img/cat-nev-a-850.webp 850w" sizes="14vw"><img src="assets/img/cat-nev-a-850.jpg" width="850" height="532" loading="lazy" decoding="async" alt=""></picture>
-                  <picture><source type="image/webp" srcset="assets/img/cat-nev-b-640.webp 640w, assets/img/cat-nev-b-850.webp 850w" sizes="14vw"><img src="assets/img/cat-nev-b-850.jpg" width="850" height="594" loading="lazy" decoding="async" alt=""></picture>
-                </div>
                 <a class="cat__link magnetic" href="https://fetsangrup.com/nevbahar" target="_blank" rel="noopener">Projeyi incele <span aria-hidden="true">↗</span></a>
-              </div>
-            </article>
-
-            <article class="cat">
-              <a class="cat__media" href="https://fetsangrup.com/defneevleri" target="_blank" rel="noopener" data-cursor="İncele" aria-label="Defne Evleri proje sayfası">
-                <picture>
-                  <source type="image/avif" srcset="assets/img/cat-def-main-900.avif 900w, assets/img/cat-def-main-1600.avif 1600w, assets/img/cat-def-main-1920.avif 1920w" sizes="(min-width: 1024px) 46vw, 86vw">
-                  <source type="image/webp" srcset="assets/img/cat-def-main-900.webp 900w, assets/img/cat-def-main-1600.webp 1600w, assets/img/cat-def-main-1920.webp 1920w" sizes="(min-width: 1024px) 46vw, 86vw">
-                  <img src="assets/img/cat-def-main-1920.jpg" width="1920" height="1002" loading="lazy" decoding="async" alt="Defne Evleri, Bahçelievler, sokak cephesi">
-                </picture>
-                <span class="cat__status">Satışta</span>
-              </a>
-              <div class="cat__body">
-                <p class="cat__index">02 — Bahçelievler</p>
-                <h3 class="cat__name">Defne <em>Evleri</em></h3>
-                <p class="cat__slogan">Bahçelievler'in kalbinde prestijli ve konforlu bir yaşam.</p>
-                <dl class="cat__specs">
-                  <div><dt>Konum</dt><dd>Bahçelievler, İstanbul</dd></div>
-                  <div><dt>Blok</dt><dd>2 · A, B</dd></div>
-                  <div><dt>Daire</dt><dd>109</dd></div>
-                  <div><dt>Tipler</dt><dd>2+1 · 3+1</dd></div>
-                  <div><dt>Yapı</dt><dd>Depreme dayanıklı, modern mimari</dd></div>
-                </dl>
-                <div class="cat__thumbs" aria-hidden="true">
-                  <picture><source type="image/webp" srcset="assets/img/cat-def-a-640.webp 640w, assets/img/cat-def-a-1000.webp 1000w" sizes="14vw"><img src="assets/img/cat-def-a-1200.jpg" width="1200" height="805" loading="lazy" decoding="async" alt=""></picture>
-                  <picture><source type="image/webp" srcset="assets/img/cat-def-b-640.webp 640w, assets/img/cat-def-b-1000.webp 1000w" sizes="14vw"><img src="assets/img/cat-def-b-1055.jpg" width="1055" height="671" loading="lazy" decoding="async" alt=""></picture>
-                </div>
-                <a class="cat__link magnetic" href="https://fetsangrup.com/defneevleri" target="_blank" rel="noopener">Projeyi incele <span aria-hidden="true">↗</span></a>
               </div>
             </article>
 
@@ -460,7 +436,7 @@
                 <span class="cat__status cat__status--live">Devam ediyor</span>
               </a>
               <div class="cat__body">
-                <p class="cat__index">03 — Küçükçekmece</p>
+                <p class="cat__index">02 — Küçükçekmece</p>
                 <h3 class="cat__name">Madımak <em>Sitesi</em></h3>
                 <p class="cat__slogan">Modern mimari, depreme dayanıklı yapı ve kentsel dönüşüm avantajı.</p>
                 <dl class="cat__specs">
@@ -469,10 +445,6 @@
                   <div><dt>Tipler</dt><dd>2+1 · 3+1</dd></div>
                   <div><dt>Öne çıkan</dt><dd>Isı ve ses yalıtımı, engelli dostu giriş</dd></div>
                 </dl>
-                <div class="cat__thumbs" aria-hidden="true">
-                  <picture><source type="image/webp" srcset="assets/img/cat-mad-a-640.webp 640w, assets/img/cat-mad-a-1000.webp 1000w" sizes="14vw"><img src="assets/img/cat-mad-a-1200.jpg" width="1200" height="848" loading="lazy" decoding="async" alt=""></picture>
-                  <picture><source type="image/webp" srcset="assets/img/cat-mad-b-640.webp 640w, assets/img/cat-mad-b-1000.webp 1000w" sizes="14vw"><img src="assets/img/cat-mad-b-1200.jpg" width="1200" height="848" loading="lazy" decoding="async" alt=""></picture>
-                </div>
                 <a class="cat__link magnetic" href="https://fetsangrup.com/projelerimiz/madimak-sitesi/" target="_blank" rel="noopener">Projeyi incele <span aria-hidden="true">↗</span></a>
               </div>
             </article>
@@ -719,6 +691,6 @@
   <script src="assets/vendor/ScrollTrigger.min.js" defer></script>
   <script src="assets/vendor/lenis.min.js" defer></script>
   <script src="assets/vendor/split-type.min.js" defer></script>
-  <script src="js/main.js?v=38afc754&amp;v3d=ba964c4a" defer></script>
+  <script src="js/main.js?v=2d63e453&amp;v3d=8c97de31" defer></script>
 </body>
 </html>
