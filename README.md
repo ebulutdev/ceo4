@@ -12,6 +12,17 @@ node _tools/serve.js 5173
 
 Ardından tarayıcıda http://localhost:5173 adresine gidin. `site/` klasörü herhangi bir statik barındırmaya (Netlify, Vercel, cPanel vb.) olduğu gibi yüklenebilir.
 
+## Yayına alma
+
+Her yayından önce CSS/JS bağlantılarındaki sürüm etiketlerini güncelleyin, sonra yayınlayın:
+
+```bash
+node _tools/version.js
+firebase deploy --only apphosting:umitfettahoglu-ceo3
+```
+
+Sürüm etiketi dosya içeriğinden üretilir; dosya değişince adres değişir ve ziyaretçilerin tarayıcısı eski kopyayı kullanmaz.
+
 ## Yapı
 
 | Yol | İçerik |

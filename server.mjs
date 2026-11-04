@@ -44,8 +44,10 @@ http.createServer((req, res) => {
   }
   const hit = resolve(req.url) || resolve('/index.html');
   const ext = extname(hit.file);
-  // HTML her zaman taze; görseller, fontlar ve kütüphaneler uzun süre önbellekte
-  const cache = ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable';
+  // HTML, CSS ve JS her açılışta kontrol edilir (güncellemeler hemen yansır; sürüm etiketli
+  // adresler zaten benzersizdir). Görseller ve fontlar 7 gün önbellekte kalır.
+  const fresh = ext === '.html' || ext === '.css' || ext === '.js' || ext === '.json' || ext === '.xml' || ext === '.txt';
+  const cache = fresh ? 'no-cache' : 'public, max-age=604800';
   res.writeHead(200, {
     'Content-Type': TYPES[ext] || 'application/octet-stream',
     'Content-Length': hit.size,

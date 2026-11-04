@@ -403,7 +403,8 @@
     const load = () => {
       if (started) return;
       started = true;
-      import(new URL('city3d.js', $('script[src$="main.js"]').src).href)
+      // main.js ile aynı sürüm etiketiyle yüklenir (?v=...), eski önbellek kopyası kullanılmaz
+      import((() => { const s = new URL($('script[src*="js/main.js"]').src); return new URL('city3d.js' + (s.searchParams.get('v3d') ? '?v=' + s.searchParams.get('v3d') : ''), s).href; })())
         .then((m) => m.createCity(host, { mobile: !isDesk(), logoUrl: host.dataset.logo }))
         .then((a) => { api = a; update(prog); requestAnimationFrame(() => { host.classList.add('is-ready'); sec.classList.add('is-ready'); }); })
         .catch((err) => { console.warn('3D sahne yüklenemedi:', err); sec.classList.add('is-fallback'); });
