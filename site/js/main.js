@@ -47,24 +47,45 @@
   ScrollTrigger.config({ ignoreMobileResize: true });
   gsap.defaults({ ease: 'expo.out', duration: 1.2 });
 
-  // ---------- Tek yönlü sahneler ----------
-  // Aşağı kaydırınca animasyon oynar; yukarı çıkınca geri sarılmaz, izlenen son hâlinde kalır.
-  // Animasyonlar yalnızca sayfa yenilenince baştan oynar.
+  // ---------- Tamamlanan sahneler katlanır ----------
+  // Bir sahne bitene kadar normal davranır (yarıda geri dönülürse geri sarılır, ölü kaydırma olmaz).
+  // Aşağı doğru tamamlanınca son hâlinde kilitlenir; kaydırma durduğunda sabitleme (pin) mesafesi sayfadan
+  // silinir ve kaydırma konumu aynı miktarda düzeltilir — ekranda zıplama olmaz, yukarı çıkarken
+  // sahne tek ekran boyunda akıp geçer. Sayfa yenilenince tüm sahneler baştan oynar.
+  const collapseQ = new Set();
+  function queueCollapse(st) { collapseQ.add(st); }
+  function runCollapse() {
+    if (!collapseQ.size) return;
+    const list = [...collapseQ].filter((st) => st.progress >= 1);
+    if (!list.length) return;
+    let removed = 0;
+    for (const st of list) {
+      collapseQ.delete(st);
+      removed += Math.max(0, st.end - st.start);
+      st.kill(true);
+    }
+    const y = Math.max(0, (lenis ? lenis.scroll : scrollY) - removed);
+    if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
+    else scrollTo(0, y);
+    ScrollTrigger.refresh();
+  }
+
   function fwd(anim, vars) {
     const { scrub = true, ...rest } = vars;
     anim.pause();
-    let max = 0;
+    let done = false;
     const lag = scrub === true ? 0 : scrub;
-    const push = (p) => {
-      if (p <= max + 1e-5) return;
-      max = p;
-      if (!lag) anim.progress(max);
-      else gsap.to(anim, { progress: max, duration: lag, ease: 'power1.out', overwrite: true });
+    const go = (p) => {
+      if (!lag) anim.progress(p);
+      else gsap.to(anim, { progress: p, duration: lag, ease: 'power1.out', overwrite: true });
     };
     return ScrollTrigger.create({
       ...rest,
-      onUpdate(self) { push(self.progress); if (rest.onUpdate) rest.onUpdate(self); },
-      onLeave(self) { push(1); if (rest.onLeave) rest.onLeave(self); },
+      onUpdate(self) { if (!done) go(self.progress); if (rest.onUpdate) rest.onUpdate(self); },
+      onLeave(self) {
+        if (!done) { done = true; go(1); if (self.pin) queueCollapse(self); }
+        if (rest.onLeave) rest.onLeave(self);
+      },
       onRefresh(self) {
         if (rest.invalidateOnRefresh) { const p = anim.progress(); anim.invalidate().progress(0).progress(p); }
         if (rest.onRefresh) rest.onRefresh(self);
@@ -76,6 +97,7 @@
   lenis = new Lenis({ lerp: 0.13, smoothWheel: true, syncTouch: false });
   lenis.stop();
   lenis.on('scroll', ScrollTrigger.update);
+  ScrollTrigger.addEventListener('scrollEnd', runCollapse);
   gsap.ticker.add((t) => lenis.raf(t * 1000));
   gsap.ticker.lagSmoothing(0);
 
@@ -590,12 +612,14 @@
       if (api) api.setProgress(p);
     }
 
+    let cityDone = false;
     ScrollTrigger.create({
       trigger: sec, start: 'top top',
       end: () => (isDesk() ? '+=360%' : '+=290%'),
       pin: '.city__pin', pinSpacing: true,
       invalidateOnRefresh: true,
-      onUpdate: (self) => update(Math.max(prog, self.progress)), // geri kaydırınca yapı geri sökülmez
+      onUpdate: (self) => { if (!cityDone) update(self.progress); },
+      onLeave: (self) => { if (!cityDone) { cityDone = true; update(1); queueCollapse(self); } }, // tamamlanınca kilitlenir ve katlanır
     });
 
     const gl = (() => { try { const c = d.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
