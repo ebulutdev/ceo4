@@ -2527,7 +2527,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
       const rx = trees[k][0] - (-3.2), rz = trees[k][1] - (-1.2);
       const t = rx * ux + rz * uz;               // kameraya doğru mesafe
       const perp = Math.abs(rx * uz - rz * ux);  // görüş ekseninden sapma
-      if (t > 18 && t < 140 && perp < 6 + t * 0.32) trees.splice(k, 1);
+      if (t > 18 && t < 240 && perp < 6 + t * 0.32) trees.splice(k, 1);
     }
   }
 
@@ -2555,6 +2555,46 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   });
   city.castShadow = city.receiveShadow = !mobile;
   scene.add(city, roofs);
+
+  // ---- Dinamik görüş temizliği ----
+  // Kamera hangi açıdan bakarsa baksın (özellikle dikey mobil ekranda kamera geri çekildiğinde),
+  // kamera ile proje arasındaki görüş hattını kesen çevre binaları yumuşakça zemine iner; hat açılınca geri yükselir.
+  const lotScale = new Float32Array(lots.length).fill(1);
+  const lotHalf = lots.map(([, , w, d]) => Math.hypot(w, d) / 2);
+  function updateOcclusion(cx, cy, cz, ly) {
+    const fx = FOCUS_X, fz = FOCUS_Z;
+    const dx = fx - cx, dz = fz - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len, uz = dz / len;
+    let changed = false, animating = false;
+    for (let k = 0; k < lots.length; k++) {
+      const [x, z, w, d, h] = lots[k];
+      const rx = x - cx, rz = z - cz;
+      const t = rx * ux + rz * uz;                       // kameradan bakış yönünde uzaklık
+      const perp = Math.abs(rx * uz - rz * ux);          // görüş hattından yanal sapma
+      let target = 1;
+      if (t > -lotHalf[k] && t < len - 26) {
+        const losY = cy + (ly - cy) * Math.max(0, t) / len;   // o noktadaki bakış yüksekliği
+        const spread = 10 + Math.max(0, t) * 0.26;            // görüş konisi: kameradan uzaklaştıkça genişler
+        if (perp - lotHalf[k] < spread && h > losY - 12) target = 0;
+      }
+      const s0 = lotScale[k];
+      const s1 = s0 + (target - s0) * 0.14;
+      const sv = Math.abs(target - s1) < 0.003 ? target : s1;
+      if (sv !== target) animating = true;
+      if (Math.abs(sv - s0) > 1e-4) {
+        lotScale[k] = sv;
+        const hh = Math.max(0.001, h * sv);
+        dummy.position.set(x, 0, z); dummy.rotation.set(0, 0, 0); dummy.scale.set(w, hh, d); dummy.updateMatrix();
+        city.setMatrixAt(k, dummy.matrix);
+        dummy.position.set(x, hh, z); dummy.scale.set(w * 0.88, Math.max(0.001, 0.8 * sv), d * 0.88); dummy.updateMatrix();
+        roofs.setMatrixAt(k, dummy.matrix);
+        changed = true;
+      }
+    }
+    if (changed) { city.instanceMatrix.needsUpdate = true; roofs.instanceMatrix.needsUpdate = true; renderer.shadowMap.needsUpdate = true; }
+    return animating;
+  }
 
   // Gerçekçi ağaçlar: Kahverengi gövde + 9 kümeli doğal yaprak tacı + ağaç başına doğal ton varyasyonu
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4A3525, roughness: 0.92 });
@@ -2737,6 +2777,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   let running = false;
   let raf = 0;
   let lastShift = -1;
+  let occAnim = false;
   let bloom = null;
   if (!mobile && renderer.capabilities.isWebGL2) {
     try { bloom = createBloom(renderer, { strength: 0.5, threshold: 1.25 }); } catch (e) { bloom = null; }
@@ -2784,10 +2825,10 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     cur.x += dx * k; cur.y += dy * k; cur.z += dz * k; cur.ly += dl * k; cur.w += dw * k;
     const moving = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) + Math.abs(dl) + Math.abs(dw) * 10 > 0.02;
     const live = progress > 0.3 && progress < 0.86;
-    if (moving || dirty || live) frames = 0; else frames++;
+    if (moving || dirty || live || occAnim) frames = 0; else frames++;
     if (frames > 2) { lastFrameT = 0; return; }
     // Kamera sabitken yalnız şantiye mikro animasyonu varsa 30 fps yeterli
-    if (live && !moving && !dirty && (++tickN & 1)) return;
+    if (live && !moving && !dirty && !occAnim && (++tickN & 1)) return;
     const now = performance.now();
     if (lastFrameT) adaptQuality(Math.min(100, (now - lastFrameT) / (live && !moving && !dirty ? 2 : 1)));
     lastFrameT = now;
@@ -2820,6 +2861,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
       camera.updateProjectionMatrix();
     }
     camera.lookAt(FOCUS_X, lookY, FOCUS_Z);
+    occAnim = updateOcclusion(cur.x, cur.y, cur.z, lookY); // inen/yükselen binalar bitene kadar çizmeye devam
     if (bloom) bloom.render(scene, camera);
     else renderer.render(scene, camera);
     updateLabels();
