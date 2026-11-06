@@ -2606,9 +2606,10 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
 
   function cameraAngle(p) {
     if (p < 0.14) return lerp(A_FINAL - 0.45, A_FINAL, smooth(p / 0.14));
-    if (p < 0.32) return A_FINAL + smooth((p - 0.14) / 0.18) * (Math.PI * 2); // Çizim fazında tam 360°
-    if (p < 0.86) return A_FINAL + Math.PI * 2 + smooth((p - 0.32) / 0.54) * (Math.PI * 2);
-    return A_FINAL + Math.PI * 4;
+    // Toplam tek tur: Çizim fazında yarım tur, temel + yapı boyunca yarım tur (baş döndürmeyen, sakin bir dönüş)
+    if (p < 0.32) return A_FINAL + smooth((p - 0.14) / 0.18) * Math.PI;
+    if (p < 0.86) return A_FINAL + Math.PI + smooth((p - 0.32) / 0.54) * Math.PI;
+    return A_FINAL + Math.PI * 2;
   }
 
   // [p, yarıçap, kamera yüksekliği, bakış yüksekliği] — Bir tık daha geniş, sokaktan çatı alınlığına tam kadraj
@@ -2778,7 +2779,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   function tick() {
     raf = requestAnimationFrame(tick);
     const tgt = cameraTarget(progress, Math.min(N, clamp01((progress - BUILD0) / BUILD_SPAN) * (N + 0.6)));
-    const k = 0.16;
+    const k = 0.09; // kamera takibi: daha yumuşak, ani dönüş yok
     const dx = tgt.x - cur.x, dy = tgt.y - cur.y, dz = tgt.z - cur.z, dl = tgt.ly - cur.ly, dw = tgt.w - cur.w;
     cur.x += dx * k; cur.y += dy * k; cur.z += dz * k; cur.ly += dl * k; cur.w += dw * k;
     const moving = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) + Math.abs(dl) + Math.abs(dw) * 10 > 0.02;
