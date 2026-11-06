@@ -619,6 +619,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = !mobile;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false; // gölgeler yalnızca sahne değişince yeniden çizilir (bkz. tick)
   host.appendChild(renderer.domElement);
 
   const SUN_POS = new THREE.Vector3(-72, 46, 68);
@@ -1096,7 +1097,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
       rcol.setHSL(0.045 + rr() * 0.025, 0.42 + rr() * 0.18, 0.2 + rr() * 0.09);
       rebar.setColorAt(k, rcol);
     });
-    rebar.castShadow = !mobile;
+    rebar.castShadow = false;
     rebar.count = 0;
     g.add(rebar);
 
@@ -1376,10 +1377,13 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   ]), new THREE.LineBasicMaterial({ color: 0x2A2A2A }));
   slew.add(pend);
   const craneBeacon = MS(new THREE.SphereGeometry(0.22, 10, 8), SM.beacon, 0, 11.0, 0, false);
+  craneBeacon.userData.keep = true;
+  mast.userData.keep = true;
   slew.add(craneBeacon);
   const trolley = new THREE.Group();
   trolley.add(BM([{ w: 1.4, h: 0.5, d: 1.9, y: -0.1 }], SM.dark));
   const hookLine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1, 0.05).translate(0, -0.5, 0), SM.dark);
+  hookLine.userData.keep = true;
   const hook = new THREE.Group();
   hook.add(BM([{ w: 0.7, h: 1.0, d: 0.5 }], SM.yellow), BM([{ w: 3.8, h: 0.4, d: 0.5, y: -1.6 }], FM.rebar));
   trolley.add(hookLine, hook);
@@ -1389,10 +1393,32 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
 
   // ---- Araç parçaları ----
   const wheelGeo = wheel(0.53, 0.42), rimGeo = wheel(0.3, 0.44), hubGeo = wheel(0.1, 0.48);
+  const wheelCombo = (() => {
+    const parts = [[wheelGeo, 0x141516], [rimGeo, 0xB9BEC4], [hubGeo, 0x1F2124]].map(([geo, hex]) => {
+      const gg = geo.index ? geo.toNonIndexed() : geo.clone();
+      const c = new THREE.Color(hex), n = gg.attributes.position.count, arr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+      gg.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      return gg;
+    });
+    const n = parts.reduce((a, gg) => a + gg.attributes.position.count, 0);
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), colA = new Float32Array(n * 3);
+    let o = 0;
+    for (const gg of parts) {
+      pos.set(gg.attributes.position.array, o * 3); nor.set(gg.attributes.normal.array, o * 3); colA.set(gg.attributes.color.array, o * 3);
+      o += gg.attributes.position.count; gg.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.BufferAttribute(colA, 3));
+    return out;
+  })();
+  const wheelMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.5 });
   function addWheel(g, x, z, list) {
-    const w = new THREE.Group();
+    const w = new THREE.Mesh(wheelCombo, wheelMat);
     w.position.set(x, 0.53, z);
-    w.add(sh(new THREE.Mesh(wheelGeo, SM.tyre)), new THREE.Mesh(rimGeo, SM.rim), new THREE.Mesh(hubGeo, SM.dark));
+    w.userData.keep = true; // döner — birleştirilmez
     g.add(w);
     list.push(w);
   }
@@ -1426,6 +1452,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     g.add(...sidePlates(1.5, 3.0, 1.95, 1.21));
     g.add(MS(new THREE.CylinderGeometry(0.28, 0.28, 1.2, 14).rotateZ(Math.PI / 2), SM.chrome, 1.4, 0.95, 1.0));
     const beacon = MS(new THREE.BoxGeometry(0.22, 0.14, 0.22), SM.beacon, 2.8, 3.32, 0.75, false);
+    beacon.userData.keep = true;
     g.add(beacon);
     for (const z of [-1.0, 1.0]) for (const x of [3.0, -1.5, -2.85]) addWheel(g, x, z, wheels);
     g.add(BM([{ w: 1.2, h: 0.08, d: 0.5, x: -2.2, y: 1.25, z: 1.0 }, { w: 1.2, h: 0.08, d: 0.5, x: -2.2, y: 1.25, z: -1.0 }, { w: 0.9, h: 0.08, d: 0.5, x: 3.0, y: 1.2, z: 1.0 }, { w: 0.9, h: 0.08, d: 0.5, x: 3.0, y: 1.2, z: -1.0 }], SM.dark));
@@ -1444,6 +1471,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
       const load = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, color: 0xA89480 }));
       load.position.set(2.7, 0.15, 0);
       load.scale.set(2.5, 0.001, 1.1);
+      load.userData.keep = true;
       bed.add(load);
       g.add(bed);
       g.userData.load = load;
@@ -1466,6 +1494,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
       drumPivot.position.set(1.8, 2.25, 0);
       drumPivot.rotation.z = Math.PI / 2 + 0.2;   // eksen arkaya (-X) ve yukarı doğru
       const drum = sh(new THREE.Mesh(new THREE.LatheGeometry(prof, 28), new THREE.MeshStandardMaterial({ map: drumTex, roughness: 0.35, metalness: 0.2 })));
+      drum.userData.keep = true;
       drumPivot.add(drum);
       g.add(drumPivot);
       g.add(BM([{ w: 0.3, h: 1.5, d: 0.3, x: -3.4, y: 1.8, z: 0.8 }, { w: 0.3, h: 1.5, d: 0.3, x: -3.4, y: 1.8, z: -0.8 }, { w: 1.0, h: 0.3, d: 0.9, x: -3.6, y: 2.75 }], SM.anth));
@@ -1486,6 +1515,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
         const beam = MS(new THREE.BoxGeometry(0.28, 0.28, 2.4).translate(0, 0, sz * 1.2), SM.red, 0, 0, 0);
         const leg = MS(new THREE.BoxGeometry(0.2, 1.2, 0.2).translate(0, -0.6, 0), SM.anth, 0, 0, sz * 2.3);
         const pad = MS(new THREE.BoxGeometry(0.7, 0.08, 0.7), SM.anth, 0, -1.25, sz * 2.3);
+        beam.userData.keep = leg.userData.keep = pad.userData.keep = true;
         arm.add(beam, leg, pad);
         g.add(arm);
         outs.push({ arm, leg, pad, sz });
@@ -1514,6 +1544,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
         const next = new THREE.Group(); next.position.x = len; piv.add(next); parent = next;
       });
       const hose = MS(new THREE.CylinderGeometry(0.11, 0.11, 3.6, 10).translate(0, -1.8, 0), SM.hose);
+      hose.userData.keep = true;
       parent.add(hose);
       Object.assign(g.userData, { segs, hose, turret, outs, L });
     }
@@ -1645,6 +1676,65 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const excs = [{ ex: exA, F: fnd[0], digYaw: Math.PI / 2, dumpYaw: -Math.PI / 2 }, { ex: exB, F: fnd[1], digYaw: Math.PI, dumpYaw: 0 }];
 
   const hideAll = (...objs) => objs.forEach((o) => { o.visible = false; });
+  // ---- Performans: her grupta aynı malzemeli statik alt parçalar tek mesh'e birleştirilir (çizim komutu sayısı ~5x azalır) ----
+  function mergeStaticChildren(root) {
+    const groups = [];
+    root.traverse((o) => { if (o === root || o.isGroup || o.isObject3D && !o.isMesh && o.children.length) groups.push(o); });
+    for (const g of groups) {
+      const buckets = new Map();
+      for (const c of g.children) {
+        if (!c.isMesh || c.isInstancedMesh || c.userData.keep || c.material.transparent || c.children.length) continue;
+        const key = c.material.uuid;
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(c);
+      }
+      for (const list of buckets.values()) {
+        if (list.length < 2) continue;
+        const geos = list.map((m) => {
+          m.updateMatrix();
+          const gg = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+          gg.applyMatrix4(m.matrix);
+          return gg;
+        });
+        const hasUv = geos.every((gg) => gg.attributes.uv);
+        const hasCol = geos.every((gg) => gg.attributes.color);
+        const n = geos.reduce((a, gg) => a + gg.attributes.position.count, 0);
+        const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+        const uv = hasUv ? new Float32Array(n * 2) : null, colA = hasCol ? new Float32Array(n * 3) : null;
+        let o = 0;
+        for (const gg of geos) {
+          pos.set(gg.attributes.position.array, o * 3);
+          nor.set(gg.attributes.normal.array, o * 3);
+          if (uv) uv.set(gg.attributes.uv.array, o * 2);
+          if (colA) colA.set(gg.attributes.color.array, o * 3);
+          o += gg.attributes.position.count;
+          gg.dispose();
+        }
+        const merged = new THREE.BufferGeometry();
+        merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        merged.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+        if (uv) merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        if (colA) merged.setAttribute('color', new THREE.BufferAttribute(colA, 3));
+        merged.computeBoundingSphere();
+        const mm = new THREE.Mesh(merged, list[0].material);
+        mm.castShadow = list.some((m) => m.castShadow);
+        mm.receiveShadow = list.some((m) => m.receiveShadow);
+        for (const m of list) g.remove(m);
+        g.add(mm);
+      }
+    }
+  }
+  for (const root of [vehicles, site, crane, exA, exB, ...flood.map((fl) => fl.g)]) mergeStaticChildren(root);
+  // Küçük parçalar (çalışanlar, tekerlekler, aksesuarlar) gölge haritasına çizilmez
+  crewG.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+  for (const root of [vehicles, site, crane, exA, exB]) {
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      if (o.geometry.boundingSphere.radius < 0.9) o.castShadow = false;
+    });
+  }
+
   hideAll(dirt, site, crane, vehicles, crewG);
 
   // Sürüş: 0..1 ilerlemesi → konum; tekerlekler kat edilen yola göre döner
@@ -2476,7 +2566,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
 
   const canopyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 });
-  const canopyGeo = buildRealisticCanopyGeo(mobile ? 1 : 2);
+  const canopyGeo = buildRealisticCanopyGeo(1);
   const canopyMesh = new THREE.InstancedMesh(canopyGeo, canopyMat, trees.length);
 
   trees.forEach(([x, z, s], k) => {
@@ -2651,10 +2741,31 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     try { bloom = createBloom(renderer, { strength: 0.5, threshold: 1.25 }); } catch (e) { bloom = null; }
   }
 
+  // ---- Uyarlamalı kalite: kare süresi uzarsa çözünürlük düşer, gerekirse bloom kapanır ----
+  let dprCur = dpr;
+  const DPR_MIN = mobile ? 0.85 : 1.0;
+  let ftEma = 16, ftSamples = 0, goodChecks = 0, lastFrameT = 0, shadowTick = 0, tickN = 0;
+  function adaptQuality(dt) {
+    ftEma = ftEma * 0.92 + dt * 0.08;
+    if (++ftSamples < 45) return;
+    ftSamples = 0;
+    if (ftEma > 21) {
+      goodChecks = 0;
+      if (dprCur > DPR_MIN + 0.01) {
+        dprCur = Math.max(DPR_MIN, dprCur - 0.2);
+        renderer.setPixelRatio(dprCur); resize();
+      } else if (bloom) {
+        bloom.dispose(); bloom = null; dirty = true;
+      }
+    } else if (ftEma < 11.5 && dprCur < dpr - 0.01) {
+      if (++goodChecks >= 3) { goodChecks = 0; dprCur = Math.min(dpr, dprCur + 0.15); renderer.setPixelRatio(dprCur); resize(); }
+    } else goodChecks = 0;
+  }
+
   function resize() {
     const w = host.clientWidth || 1, h = host.clientHeight || 1;
     renderer.setSize(w, h, false);
-    if (bloom) bloom.setSize(Math.round(w * dpr), Math.round(h * dpr));
+    if (bloom) bloom.setSize(Math.round(w * dprCur), Math.round(h * dprCur));
     camera.aspect = w / h;
     lastShift = -1;
     camera.updateProjectionMatrix();
@@ -2673,9 +2784,16 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     const moving = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) + Math.abs(dl) + Math.abs(dw) * 10 > 0.02;
     const live = progress > 0.3 && progress < 0.86;
     if (moving || dirty || live) frames = 0; else frames++;
-    if (frames > 2) return;
+    if (frames > 2) { lastFrameT = 0; return; }
+    // Kamera sabitken yalnız şantiye mikro animasyonu varsa 30 fps yeterli
+    if (live && !moving && !dirty && (++tickN & 1)) return;
+    const now = performance.now();
+    if (lastFrameT) adaptQuality(Math.min(100, (now - lastFrameT) / (live && !moving && !dirty ? 2 : 1)));
+    lastFrameT = now;
     camera.position.set(cur.x, cur.y, cur.z);
-    if (live) animateSite(performance.now() / 1000);
+    if (live) animateSite(now / 1000);
+    // Gölgeler: sahne değiştiyse hemen, canlı animasyonda her 3 karede bir
+    if (dirty || (live && ++shadowTick % 3 === 0)) renderer.shadowMap.needsUpdate = true;
 
     // Mimari fotoğraf kamerası (shift-lens): kamera yatay bakar, kadraj yukarı kaydırılır;
     // bina geriye devrilmez, sokak kotundan alınlığa kadar tek karede görünür.
@@ -2708,17 +2826,19 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   }
 
   // Sahne görünür olmadan önce tüm materyal shader'larını arka planda (KHR_parallel_shader_compile) derle
-  for (const list of floors) for (const f of list) f.visible = true;
-  gardenWallGroup.visible = true;
-  signs.visible = true;
-  wire.visible = true;
+  // Görünürlüğü fazlara bağlı tüm nesneler geçici olarak açılır; apply() hemen ardından doğru duruma getirir
+  scene.traverse((o) => { o.visible = true; });
+  const savedCounts = [];
+  scene.traverse((o) => { if (o.isInstancedMesh && o.count === 0) { savedCounts.push(o); o.count = 1; } });
   if (typeof renderer.compileAsync === 'function') {
     try { await renderer.compileAsync(scene, camera); } catch (e) { /* desteklenmeyen ortam */ }
   } else if (typeof renderer.compile === 'function') {
     await yieldThread();
     renderer.compile(scene, camera);
   }
+  for (const o of savedCounts) o.count = 0;
   built = apply(progress);
+  renderer.shadowMap.needsUpdate = true;
 
   const io = new IntersectionObserver(([e]) => {
     if (e.isIntersecting && !running) { running = true; dirty = true; raf = requestAnimationFrame(tick); }
