@@ -35,9 +35,23 @@
   <link rel="preload" as="image" type="image/webp" media="(max-width: 767px)" href="assets/film/m/005.webp">
   <link rel="preload" as="image" type="image/webp" media="(min-width: 768px)" href="assets/film/d/007.webp">
 
-  <script>document.documentElement.classList.add('js')</script>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <script>
+    // Sayfa her açılışta/yenilemede en baştan başlar: tarayıcının kaydırma hafızası ve #bağlantı kapatılır,
+    // geri/ileri önbelleğinden (bfcache) dönülürse sayfa yeniden yüklenir.
+    document.documentElement.classList.add('js');
+    (function () {
+      try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) {}
+      if (location.hash) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+      window.scrollTo(0, 0);
+      addEventListener('beforeunload', function () { window.scrollTo(0, 0); });
+      addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+    })();
+  </script>
   <script type="importmap">{ "imports": { "three": "./assets/vendor/three/three.module.min.js" } }</script>
-  <link rel="stylesheet" href="css/style.css?v=81354a69">
+  <link rel="stylesheet" href="css/style.css?v=81354a74">
 
   <script type="application/ld+json">
   {
@@ -96,11 +110,21 @@
     <div class="intro__panel intro__panel--l"></div>
     <div class="intro__panel intro__panel--r"></div>
     <div class="intro__content">
-      <div class="intro__name-wrap">
-        <p class="intro__label">FETSAN Grup</p>
-        <div class="intro__name"><span class="intro__w">Ümit</span> <span class="intro__w intro__w--i">Fettahoğlu</span></div>
+      <p class="intro__label">FETSAN Grup</p>
+      <div class="intro__stage">
+        <div class="intro__count">
+          <div class="intro__year" aria-label="1956"><span class="intro__digit"><span class="intro__strip"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>0</span></span></span><span class="intro__digit"><span class="intro__strip"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>0</span></span></span><span class="intro__digit"><span class="intro__strip"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>0</span></span></span><span class="intro__digit"><span class="intro__strip"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>0</span></span></span></div>
+          <div class="intro__bar">
+            <span class="intro__bar-y">1956</span>
+            <i class="intro__track"><b class="intro__fill"></b><s class="intro__spark"></s></i>
+            <span class="intro__bar-y">2026</span>
+          </div>
+        </div>
+        <div class="intro__legacy">
+          <span class="intro__line"></span>
+          <p class="intro__quote">1956’dan bugüne uzanan <em>bir miras.</em></p>
+        </div>
       </div>
-      <p class="intro__role"><span>Kurucu Ortak</span><span class="intro__sep"> · </span><span>Yönetim Kurulu Başkanı</span></p>
     </div>
     <button class="intro__skip" type="button" tabindex="-1">Geç</button>
   </div>
@@ -170,8 +194,8 @@
       <div class="wrap">
         <p class="eyebrow">01 — Manifesto</p>
         <blockquote class="manifesto__quote">
-          <p data-scrub-words>Kenti dönüştürüyoruz, yaşamı güzelleştiriyoruz.</p>
-          <footer>— Ümit Fettahoğlu</footer>
+          <p data-scrub-words>Yarınlar için bugünden sağlam temeller atıyoruz.</p>
+          <footer>— FETSAN Grup</footer>
         </blockquote>
       </div>
     </section>
@@ -394,7 +418,7 @@
             <h2 class="catalog__title">Apartman değil, <em>yaşam alanı.</em></h2>
           </div>
           <div class="catalog__meta" aria-hidden="true">
-            <p class="catalog__count"><span class="catalog__track-n"><span>01</span><span>02</span></span><span class="catalog__total">/ 02</span></p>
+            <p class="catalog__count"><span class="catalog__track-n"><span>01</span><span>02</span><span>03</span></span><span class="catalog__total">/ 03</span></p>
             <span class="catalog__bar"><i></i></span>
           </div>
         </div>
@@ -427,23 +451,47 @@
             </article>
 
             <article class="cat">
+              <a class="cat__media" href="https://fetsangrup.com/defneevleri" target="_blank" rel="noopener" data-cursor="İncele" aria-label="Defne Evleri proje sayfası">
+                <picture>
+                  <source type="image/avif" srcset="assets/img/cat-def-main-900.avif 900w, assets/img/cat-def-main-1600.avif 1600w, assets/img/cat-def-main-1920.avif 1920w" sizes="(min-width: 1024px) 46vw, 86vw">
+                  <source type="image/webp" srcset="assets/img/cat-def-main-900.webp 900w, assets/img/cat-def-main-1600.webp 1600w, assets/img/cat-def-main-1920.webp 1920w" sizes="(min-width: 1024px) 46vw, 86vw">
+                  <img src="assets/img/cat-def-main-1920.jpg" width="1920" height="1002" loading="lazy" decoding="async" alt="Defne Evleri, A ve B blokları, Bahçelievler">
+                </picture>
+                <span class="cat__status">Satışta</span>
+              </a>
+              <div class="cat__body">
+                <p class="cat__index">02 — Bahçelievler</p>
+                <h3 class="cat__name">Defne <em>Evleri</em></h3>
+                <p class="cat__slogan">Bahçelievler’in kalbinde prestijli ve konforlu bir yaşam.</p>
+                <dl class="cat__specs">
+                  <div><dt>Konum</dt><dd>Bahçelievler, İstanbul</dd></div>
+                  <div><dt>Blok</dt><dd>2 · A, B</dd></div>
+                  <div><dt>Daire</dt><dd>109</dd></div>
+                  <div><dt>Tipler</dt><dd>2+1 · 3+1</dd></div>
+                </dl>
+                <a class="cat__link magnetic" href="https://fetsangrup.com/defneevleri" target="_blank" rel="noopener">Projeyi incele <span aria-hidden="true">↗</span></a>
+              </div>
+            </article>
+
+            <article class="cat">
               <a class="cat__media" href="https://fetsangrup.com/projelerimiz/madimak-sitesi/" target="_blank" rel="noopener" data-cursor="İncele" aria-label="Madımak Sitesi proje sayfası">
                 <picture>
                   <source type="image/avif" srcset="assets/img/cat-mad-main-900.avif 900w, assets/img/cat-mad-main-1600.avif 1600w, assets/img/cat-mad-main-1920.avif 1920w" sizes="(min-width: 1024px) 46vw, 86vw">
                   <source type="image/webp" srcset="assets/img/cat-mad-main-900.webp 900w, assets/img/cat-mad-main-1600.webp 1600w, assets/img/cat-mad-main-1920.webp 1920w" sizes="(min-width: 1024px) 46vw, 86vw">
                   <img src="assets/img/cat-mad-main-1920.jpg" width="1920" height="1357" loading="lazy" decoding="async" alt="Madımak Sitesi, Küçükçekmece">
                 </picture>
-                <span class="cat__status cat__status--live">Devam ediyor</span>
+                <span class="cat__status cat__status--live">Devam eden proje</span>
               </a>
               <div class="cat__body">
-                <p class="cat__index">02 — Küçükçekmece</p>
+                <p class="cat__index">03 — Küçükçekmece</p>
                 <h3 class="cat__name">Madımak <em>Sitesi</em></h3>
-                <p class="cat__slogan">Modern mimari, depreme dayanıklı yapı ve kentsel dönüşüm avantajı.</p>
+                <p class="cat__slogan">Modern mimari tasarım, depreme dayanıklı yapı, kentsel dönüşüm avantajı ve yatırım değeri.</p>
                 <dl class="cat__specs">
                   <div><dt>Konum</dt><dd>Küçükçekmece, İstanbul</dd></div>
+                  <div><dt>Kategori</dt><dd>Site projesi</dd></div>
                   <div><dt>Dönem</dt><dd>2025 – 2026</dd></div>
                   <div><dt>Tipler</dt><dd>2+1 · 3+1</dd></div>
-                  <div><dt>Öne çıkan</dt><dd>Isı ve ses yalıtımı, engelli dostu giriş</dd></div>
+                  <div><dt>Öne çıkan</dt><dd>Yüksek ısı ve ses yalıtımı, asansörlü ve engelli dostu erişim</dd></div>
                 </dl>
                 <a class="cat__link magnetic" href="https://fetsangrup.com/projelerimiz/madimak-sitesi/" target="_blank" rel="noopener">Projeyi incele <span aria-hidden="true">↗</span></a>
               </div>
@@ -467,8 +515,12 @@
         <p class="eyebrow eyebrow--light">08 — İmza Sözler</p>
         <div class="quotes__stage">
           <figure class="quote">
-            <blockquote><p>Kenti dönüştürüyoruz, yaşamı güzelleştiriyoruz.</p></blockquote>
-            <figcaption>— Ümit Fettahoğlu</figcaption>
+            <blockquote><p>Fatih Sultan Mehmet İstanbul’u fethetti; <em>biz yeniliyoruz.</em></p></blockquote>
+            <figcaption>— Ümit Fettahoğlu<span class="quote__role">Kurucu Ortak · Yönetim Kurulu Başkanı</span></figcaption>
+          </figure>
+          <figure class="quote">
+            <blockquote><p>İstanbul’u yenileyerek, <em>bize bırakılan mirası büyütüyoruz.</em></p></blockquote>
+            <figcaption>— Ümit Fettahoğlu<span class="quote__role">Kurucu Ortak · Yönetim Kurulu Başkanı</span></figcaption>
           </figure>
           <figure class="quote">
             <blockquote><p>1956'dan bugüne güvenle inşa ediyoruz.</p></blockquote>
@@ -488,14 +540,13 @@
       <div class="wrap">
         <div class="eco__head">
           <p class="eyebrow">09 — FETSAN Grup</p>
-          <h2 class="h2" data-words>Tek imza, <em>beş alan.</em></h2>
+          <h2 class="h2" data-words>Tek imza, <em>dört alan.</em></h2>
         </div>
         <ul class="eco__list">
           <li><a class="eco__row" href="https://fetsangrup.com/kentsel-donusum" target="_blank" rel="noopener" data-cursor="Ziyaret"><span class="eco__n">01</span><span class="eco__t">İnşaat & Kentsel Dönüşüm</span><span class="eco__d">Riskli yapı yenileme, kat karşılığı konut, anahtar teslim inşaat</span></a></li>
           <li><a class="eco__row" href="https://www.astmimarlik.com/" target="_blank" rel="noopener" data-cursor="Ziyaret"><span class="eco__n">02</span><span class="eco__t">AST Mimarlık</span><span class="eco__d">Mimari proje ve ruhsat süreçleri</span></a></li>
           <li><a class="eco__row" href="https://fetsanmotors.com/" target="_blank" rel="noopener" data-cursor="Ziyaret"><span class="eco__n">03</span><span class="eco__t">Fetsan Motors</span><span class="eco__d">Otomotiv</span></a></li>
-          <li><div class="eco__row"><span class="eco__n">04</span><span class="eco__t">Zalluna</span><span class="eco__d">Restoran</span></div></li>
-          <li><div class="eco__row"><span class="eco__n">05</span><span class="eco__t">Tekstil</span><span class="eco__d">Tekstil yatırımları</span></div></li>
+          <li><div class="eco__row"><span class="eco__n">04</span><span class="eco__t">Sanfet</span><span class="eco__d">Teknoloji yatırımları</span></div></li>
         </ul>
       </div>
     </section>
@@ -632,7 +683,7 @@
               <li><a class="ext" href="https://fetsangrup.com/" target="_blank" rel="noopener">FETSAN Grup</a></li>
               <li><a class="ext" href="https://www.astmimarlik.com/" target="_blank" rel="noopener">AST Mimarlık</a></li>
               <li><a class="ext" href="https://fetsanmotors.com/" target="_blank" rel="noopener">Fetsan Motors</a></li>
-              <li><span class="fcol__muted">Zalluna <small>Restoran</small></span></li>
+              <li><span class="fcol__muted">Sanfet <small>Teknoloji</small></span></li>
             </ul>
           </nav>
           <div class="fcol">
@@ -691,6 +742,6 @@
   <script src="assets/vendor/ScrollTrigger.min.js" defer></script>
   <script src="assets/vendor/lenis.min.js" defer></script>
   <script src="assets/vendor/split-type.min.js" defer></script>
-  <script src="js/main.js?v=8832ce33&amp;v3d=7f90b8d7" defer></script>
+  <script src="js/main.js?v=8832ce41&amp;v3d=f0a1b2d7" defer></script>
 </body>
 </html>

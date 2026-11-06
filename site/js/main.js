@@ -47,10 +47,75 @@
   ScrollTrigger.config({ ignoreMobileResize: true });
   gsap.defaults({ ease: 'expo.out', duration: 1.2 });
 
+  // ---------- Tamamlanan sahneler katlanır ----------
+  // Bir sahne bitene kadar normal davranır (yarıda geri dönülürse geri sarılır, ölü kaydırma olmaz).
+  // Aşağı doğru tamamlanınca son hâlinde kilitlenir; kaydırma durduğunda sabitleme (pin) mesafesi sayfadan
+  // silinir ve kaydırma konumu aynı miktarda düzeltilir — ekranda zıplama olmaz, yukarı çıkarken
+  // sahne tek ekran boyunda akıp geçer. Sayfa yenilenince tüm sahneler baştan oynar.
+  const collapseQ = new Set();
+  // Katlama sırasında sayfa önce kısalır, sonra kaydırma konumu düzeltilir. Bu ara anda sonraki sahneler
+  // kendini yanlışlıkla 'geçilmiş' sanmasın diye tüm sahne olayları yok sayılır (zincirleme atlama hatası).
+  let collapsing = false;
+  const sceneChecks = []; // katlamadan sonra 'sonu geçilmiş ama bitmemiş' sahneleri tamamlar
+  function queueCollapse(st) { collapseQ.add(st); }
+  function runCollapse() {
+    if (collapsing || !collapseQ.size) return;
+    const list = [...collapseQ].filter((st) => st.progress >= 1);
+    if (!list.length) return;
+    collapsing = true;
+    const y0 = lenis ? lenis.scroll : scrollY;
+    let removed = 0;
+    for (const st of list) {
+      collapseQ.delete(st);
+      removed += Math.max(0, st.end - st.start);
+      st.kill(true);
+    }
+    const y = Math.max(0, y0 - removed);
+    if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
+    scrollTo(0, y);
+    ScrollTrigger.refresh();
+    // Konum düzeltildikten sonra sahneler doğru ilerleme değerleriyle yeniden olay almaya başlar
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      collapsing = false;
+      ScrollTrigger.update();
+      sceneChecks.forEach((fn) => fn());
+    }));
+  }
+
+  function fwd(anim, vars) {
+    const { scrub = true, ...rest } = vars;
+    anim.pause();
+    let done = false;
+    const lag = scrub === true ? 0 : scrub;
+    const go = (p) => {
+      if (!lag) anim.progress(p);
+      else gsap.to(anim, { progress: p, duration: lag, ease: 'power1.out', overwrite: true });
+    };
+    const st = ScrollTrigger.create({
+      ...rest,
+      onUpdate(self) { if (!done && !collapsing) go(self.progress); if (rest.onUpdate) rest.onUpdate(self); },
+      onLeave(self) {
+        if (collapsing) return;
+        if (!done) { done = true; go(1); if (self.pin) queueCollapse(self); }
+        if (rest.onLeave) rest.onLeave(self);
+      },
+      onRefresh(self) {
+        if (rest.invalidateOnRefresh) { const p = anim.progress(); anim.invalidate().progress(0).progress(p); }
+        if (rest.onRefresh) rest.onRefresh(self);
+      },
+    });
+    sceneChecks.push(() => {
+      if (done || !st.isActive && st.progress < 1) return;
+      if (st.progress >= 1) { done = true; go(1); if (st.pin) queueCollapse(st); }
+    });
+    return st;
+  }
+
   // ---------- Lenis ----------
   lenis = new Lenis({ lerp: 0.13, smoothWheel: true, syncTouch: false });
   lenis.stop();
   lenis.on('scroll', ScrollTrigger.update);
+  ScrollTrigger.addEventListener('scrollEnd', runCollapse);
   gsap.ticker.add((t) => lenis.raf(t * 1000));
   gsap.ticker.lagSmoothing(0);
 
@@ -76,9 +141,21 @@
     try { seen = sessionStorage.getItem('uf-intro') === '1'; sessionStorage.setItem('uf-intro', '1'); } catch (e) { /* gizli mod */ }
     scrollTo(0, 0);
     lenis.stop();
-    const words = $$('.intro__name .intro__w');
-    const k = seen ? 0.45 : 0.72;
+    const k = 1; // sayfa her yenilendiğinde açılış tam oynar
     let unlocked = false;
+    const strips = $$('.intro__strip');
+    const yr = { v: 1956 };
+    // Kilometre sayacı: birler sürekli kayar; üst basamaklar alt basamak 9→0 geçerken birlikte döner
+    function setYear(v) {
+      [1000, 100, 10, 1].forEach((p, i) => {
+        const whole = Math.floor(v / p);
+        let pos = whole % 10;
+        if (p === 1) pos = v % 10;
+        else { const below = v - whole * p; if (below > p - 1) pos += below - (p - 1); }
+        strips[i].style.transform = 'translate3d(0,' + (-pos).toFixed(4) + 'em,0)';
+      });
+    }
+    setYear(1956);
 
     function unlockScroll() {
       if (unlocked) return;
@@ -88,30 +165,43 @@
       lenis.start();
     }
 
+    // Sayfa (hero görseli + fontlar) hazır olana kadar sayaç sonunda kısa bekleme; en fazla 3.5 sn
+    let pageReady = d.readyState === 'complete';
+    const onReady = () => { pageReady = true; if (tl.paused() && waiting) { waiting = false; tl.resume(); } };
+    if (!pageReady) { addEventListener('load', onReady, { once: true }); setTimeout(onReady, 3500); }
+    let waiting = false;
+
     const tl = gsap.timeline({ onComplete: finish });
-    // Saf GPU transform + opacity: clip-path veya tam ekran canvas scale kullanılmaz, sıfır kare düşüşü.
-    tl.fromTo('.intro__label',
-        { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.65 * k, ease: 'power3.out' }, 0.04)
-      .fromTo(words,
-        { autoAlpha: 0, y: 24 },
-        { autoAlpha: 1, y: 0, duration: 0.85 * k, stagger: 0.14 * k, ease: 'power3.out' }, 0.12)
-      .fromTo('.intro__role',
-        { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.65 * k, ease: 'power3.out' }, `-=${0.52 * k}`)
-      .to(['.intro__content', '.intro__skip'],
-        { autoAlpha: 0, y: -12, duration: 0.36, ease: 'power2.in' }, `+=${0.28 * k}`)
-      .to('.intro__panel--l', { xPercent: -101, duration: 0.82, ease: 'expo.inOut', force3D: true }, '-=0.06')
-      .to('.intro__panel--r', { xPercent: 101, duration: 0.82, ease: 'expo.inOut', force3D: true }, '<')
-      .add(unlockScroll, '<0.28')
-      .to('.film__cue', { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<0.18')
-      .to(header, { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<');
+    // Yalnızca transform / opacity / kısa süreli blur: ölçek (büyüme) animasyonu yok.
+    tl.fromTo('.intro__label', { autoAlpha: 0, letterSpacing: '.72em' }, { autoAlpha: 1, letterSpacing: '.46em', duration: 1.1 * k, ease: 'expo.out' }, 0.05)
+      .fromTo('.intro__count', { autoAlpha: 0, y: 14, filter: 'blur(10px)' }, { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 0.9 * k, ease: 'power3.out', clearProps: 'filter' }, 0.12)
+      // 1956 → 2026: yavaş başlar, giderek hızlanır; çubuk ve ışık noktası aynı eğriyle ilerler
+      .addLabel('count', 0.45 * k)
+      .to(yr, { v: 2026, duration: 2.6 * k, ease: 'power3.in', onUpdate: () => setYear(yr.v) }, 'count')
+      .to('.intro__fill', { scaleX: 1, duration: 2.6 * k, ease: 'power3.in' }, 'count')
+      .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: 2.6 * k, ease: 'power3.in' }, 'count')
+      .to('.intro__spark', { autoAlpha: 0, duration: 0.5, ease: 'power2.out' }, '>')
+      .addPause('>-0.3', () => { if (pageReady) requestAnimationFrame(() => tl.resume()); else waiting = true; })
+      // Sayaç 2026'da kalır; çubuk söner, altında çizgi soldan sağa günümüze uzanır ve söz belirir (çakışma yok)
+      .to('.intro__bar', { autoAlpha: 0, y: -6, duration: 0.6 * k, ease: 'power2.inOut' }, '+=0.15')
+      .to('.intro__line', { scaleX: 1, duration: 1.3 * k, ease: 'expo.inOut' }, '-=0.25')
+      .fromTo('.intro__quote',
+        { autoAlpha: 0, y: 8, filter: 'blur(8px)' },
+        { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 1.2 * k, ease: 'power3.out' }, '-=0.75')
+      // Siteye geçiş: içerik yumuşakça dağılır, perdeler kademeli olarak yukarı kalkar
+      .to(['.intro__content', '.intro__skip'], { autoAlpha: 0, y: -10, filter: 'blur(8px)', duration: 0.65, ease: 'power2.in' }, `+=${0.6 * k}`)
+      .to('.intro__panel--l', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '-=0.18')
+      .to('.intro__panel--r', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '<0.09')
+      .add(unlockScroll, '<0.3')
+      .to('.film__cue', { autoAlpha: 1, duration: 0.6, ease: 'power2.out' }, '<0.2')
+      .to(header, { autoAlpha: 1, duration: 0.6, ease: 'power2.out' }, '<');
 
     let skipped = false;
     const skip = () => {
       if (skipped) return;
       skipped = true;
       tl.timeScale(3.8);
+      if (tl.paused()) { waiting = false; tl.resume(); }
       unlockScroll();
     };
     $('.intro__skip').addEventListener('click', skip, { once: true });
@@ -127,7 +217,7 @@
     }
   }
 
-  const fontList = ['500 1em "Cormorant Garamond"', 'italic 500 1em "Cormorant Garamond"', '400 1em Jost'];
+  const fontList = ['500 1em "Cormorant Garamond"', 'italic 500 1em "Cormorant Garamond"', '400 1em Jost', '500 1em Jost'];
   const fontsReady = d.fonts ? Promise.race([Promise.all(fontList.map((f) => d.fonts.load(f))), new Promise((r) => setTimeout(r, 350))]) : Promise.resolve();
   fontsReady.then(() => {
     ScrollTrigger.refresh();
@@ -379,16 +469,15 @@
     const obj = { f: cfg.startF };
 
     // 7. ScrollTrigger: scrub: true ile Lenis'e 1:1 bağlanır ve rAF içindeyken senkron drawSync() çağrılır (0 kare gecikme)
-    gsap.timeline({
-      defaults: { ease: 'none', immediateRender: false },
-      scrollTrigger: {
-        trigger: sec, start: 'top top',
-        end: () => (isDesk() ? '+=200%' : '+=165%'),
-        pin: '.film__pin', scrub: true,
-        invalidateOnRefresh: true,
-        onLeave: () => { if (warmCity) warmCity(); },
-      },
-    })
+    const filmTl = gsap.timeline({ defaults: { ease: 'none', immediateRender: false } });
+    fwd(filmTl, {
+      trigger: sec, start: 'top top',
+      end: () => (isDesk() ? '+=200%' : '+=165%'),
+      pin: '.film__pin', scrub: true,
+      invalidateOnRefresh: true,
+      onLeave: () => { if (warmCity) warmCity(); },
+    });
+    filmTl
       .fromTo('.film__cue', { autoAlpha: 1 }, { autoAlpha: 0, duration: 0.06, immediateRender: false }, 0)
       .fromTo(obj, { f: cfg.startF }, {
         f: cfg.n - 1,
@@ -428,14 +517,12 @@
       }
     });
 
-    const tl = gsap.timeline({
-      defaults: { ease: 'power3.inOut', immediateRender: false },
-      scrollTrigger: {
-        trigger: sec, start: 'top top',
-        end: () => `+=${chs.length * 75}%`,
-        pin: '.story__pin', scrub: 0.25,
-        invalidateOnRefresh: true,
-      },
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false } });
+    fwd(tl, {
+      trigger: sec, start: 'top top',
+      end: () => `+=${chs.length * 75}%`,
+      pin: '.story__pin', scrub: 0.25,
+      invalidateOnRefresh: true,
     });
     imgs.forEach((im, i) => {
       tl.fromTo($('img', im), { scale: 1.08 }, { scale: 1, duration: 1, ease: 'none' }, i ? i - 0.25 : 0);
@@ -471,14 +558,12 @@
       }
     });
 
-    const tl = gsap.timeline({
-      defaults: { ease: 'power3.inOut', immediateRender: false },
-      scrollTrigger: {
-        trigger: sec, start: 'top top',
-        end: () => `+=${items.length * 65}%`,
-        pin: '.lead__pin', scrub: 0.25,
-        invalidateOnRefresh: true,
-      },
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false } });
+    fwd(tl, {
+      trigger: sec, start: 'top top',
+      end: () => `+=${items.length * 65}%`,
+      pin: '.lead__pin', scrub: 0.25,
+      invalidateOnRefresh: true,
     });
     tl.to({}, { duration: 0.45 }, 0);
     for (let i = 1; i < items.length; i++) {
@@ -503,7 +588,7 @@
     const host = $('.city__canvas', sec);
     const words = $$('.city__word', sec);
     const descs = $$('.city__desc-item', sec);
-    const PH = [0, 0.14, 0.32, 0.44, 0.86];
+    const PH = [0, 0.14, 0.32, 0.52, 0.86];
     let api = null;
     let prog = 0;
     let phase = 0;
@@ -545,13 +630,16 @@
       if (api) api.setProgress(p);
     }
 
-    ScrollTrigger.create({
+    let cityDone = false;
+    const citySt = ScrollTrigger.create({
       trigger: sec, start: 'top top',
-      end: () => (isDesk() ? '+=280%' : '+=220%'),
+      end: () => (isDesk() ? '+=360%' : '+=290%'),
       pin: '.city__pin', pinSpacing: true,
       invalidateOnRefresh: true,
-      onUpdate: (self) => update(self.progress),
+      onUpdate: (self) => { if (!cityDone && !collapsing) update(self.progress); },
+      onLeave: (self) => { if (!cityDone && !collapsing) { cityDone = true; update(1); queueCollapse(self); } }, // tamamlanınca kilitlenir ve katlanır
     });
+    sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) { cityDone = true; update(1); queueCollapse(citySt); } });
 
     const gl = (() => { try { const c = d.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
     if (!gl) { sec.classList.add('is-fallback'); return; }
@@ -627,14 +715,12 @@
     gsap.set(sets.slice(1).flat(), { yPercent: 150 });
     gsap.set(caps.slice(1), { autoAlpha: 0, y: 10 });
 
-    const tl = gsap.timeline({
-      defaults: { ease: 'power3.inOut', immediateRender: false },
-      scrollTrigger: {
-        trigger: '.quotes', start: 'top top',
-        end: () => `+=${quotes.length * 65}%`,
-        pin: '.quotes__pin', scrub: 0.25,
-        invalidateOnRefresh: true,
-      },
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false } });
+    fwd(tl, {
+      trigger: '.quotes', start: 'top top',
+      end: () => `+=${quotes.length * 65}%`,
+      pin: '.quotes__pin', scrub: 0.25,
+      invalidateOnRefresh: true,
     });
     tl.to({}, { duration: 0.45 });
     for (let i = 1; i < quotes.length; i++) {
@@ -656,10 +742,7 @@
   $$('[data-scrub-words]').forEach((p) => {
     const words = new SplitType(p, { types: 'words' }).words;
     gsap.set(words, { opacity: 0.34 });
-    gsap.to(words, {
-      opacity: 1, ease: 'none', stagger: 0.08,
-      scrollTrigger: { trigger: p, start: 'top 90%', end: 'center 52%', scrub: 0.2 },
-    });
+    fwd(gsap.to(words, { opacity: 1, ease: 'none', stagger: 0.08 }), { trigger: p, start: 'top 90%', end: 'center 52%', scrub: 0.2 });
   });
 
   // ---------- Başlıklar: kelime maskesi ----------
@@ -709,8 +792,8 @@
   (() => {
     const tlEl = $('.tl');
     const rail = $('.tl__rail');
-    gsap.to('.tl__fill', { scaleY: 1, ease: 'none', scrollTrigger: { trigger: tlEl, start: 'top 68%', end: 'bottom 68%', scrub: 0.2 } });
-    gsap.to('.tl__pen', { y: () => rail.offsetHeight, ease: 'none', scrollTrigger: { trigger: tlEl, start: 'top 68%', end: 'bottom 68%', scrub: 0.2, invalidateOnRefresh: true } });
+    fwd(gsap.to('.tl__fill', { scaleY: 1, ease: 'none' }), { trigger: tlEl, start: 'top 68%', end: 'bottom 68%', scrub: 0.2 });
+    fwd(gsap.to('.tl__pen', { y: () => rail.offsetHeight, ease: 'none' }), { trigger: tlEl, start: 'top 68%', end: 'bottom 68%', scrub: 0.2, invalidateOnRefresh: true });
     $$('.tl__item').forEach((it) => {
       const yr = $('.tl__year span', it);
       const body = $('.tl__body', it).children;
@@ -751,10 +834,8 @@
     gsap.set(thins, { autoAlpha: 0 });
     const info = $('.project__info', art.parentElement);
 
-    const tl = gsap.timeline({
-      defaults: { ease: 'none' },
-      scrollTrigger: { trigger: art, start: 'top 92%', end: isDesk() ? 'top 26%' : 'top 32%', scrub: 0.2 },
-    });
+    const tl = gsap.timeline({ defaults: { ease: 'none' } });
+    fwd(tl, { trigger: art, start: 'top 92%', end: isDesk() ? 'top 26%' : 'top 32%', scrub: 0.2 });
     tl.to(lines, { strokeDashoffset: 0, duration: 0.4, stagger: 0.15 / Math.max(1, lines.length) }, 0)
       .to(thins, { autoAlpha: 1, duration: 0.25 }, 0.16);
     if (img) {

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Font önizleme</title>
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=DM+Serif+Display:ital@0;1&family=Marcellus&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; background: #17181A; }
+  .scene { position: relative; height: 100vh; overflow: hidden; color: #FBFAF8; font-family: Jost, sans-serif; }
+  .scene img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .shade { position: absolute; inset: 0; background: rgba(10,11,12,.16), radial-gradient(ellipse at 50% 55%, rgba(14,15,16,.45) 0%, rgba(14,15,16,.78) 100%); background: radial-gradient(ellipse at 50% 55%, rgba(14,15,16,.5) 0%, rgba(14,15,16,.8) 100%); }
+  .title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 24px; }
+  .eyebrow { font-size: 10.5px; font-weight: 500; letter-spacing: .32em; text-transform: uppercase; color: #B8BABD; }
+  .name { margin: 18px 0 0; font-weight: 400; font-size: clamp(3.6rem, 13vw, 10rem); line-height: .98; letter-spacing: -.01em; }
+  .name span { display: block; }
+  .name em { color: #D9D7D2; }
+  .role { margin-top: 28px; font-size: 13px; font-weight: 500; letter-spacing: .32em; text-transform: uppercase; color: #D9D7D2; }
+  .tag { position: absolute; left: 24px; bottom: 20px; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+</style>
+</head>
+<body>
+<div class="scene">
+  <img src="assets/film/d/120.webp" alt="">
+  <div class="shade"></div>
+  <div class="title">
+    <p class="eyebrow">FETSAN Grup</p>
+    <h1 class="name"><span>Ümit</span><span><em>Fettahoğlu</em></span></h1>
+    <p class="role">Kurucu Ortak & Yönetim Kurulu Başkanı</p>
+  </div>
+  <p class="tag"></p>
+</div>
+<script>
+  const opts = {
+    a: { fam: '"Playfair Display", serif', italic: true, label: 'A · Playfair Display' },
+    b: { fam: '"DM Serif Display", serif', italic: true, label: 'B · DM Serif Display' },
+    c: { fam: 'Marcellus, serif', italic: false, label: 'C · Marcellus' },
+    now: { fam: '"Bodoni Moda", serif', italic: true, label: 'Şu anki · Bodoni Moda (rol yazısı büyütülmüş)' },
+  };
+  const o = opts[new URLSearchParams(location.search).get('f') || 'a'];
+  const n = document.querySelector('.name');
+  n.style.fontFamily = o.fam;
+  n.querySelector('em').style.fontStyle = o.italic ? 'italic' : 'normal';
+  document.querySelector('.tag').textContent = o.label;
+</script>
+</body>
+</html>
