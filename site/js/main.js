@@ -78,9 +78,19 @@
     lenis.stop();
     const k = seen ? 0.55 : 1;
     let unlocked = false;
-    const numEl = $('.intro__num');
+    const strips = $$('.intro__strip');
     const yr = { v: 1956 };
-    let lastYear = 1956;
+    // Kilometre sayacı: birler sürekli kayar; üst basamaklar alt basamak 9→0 geçerken birlikte döner
+    function setYear(v) {
+      [1000, 100, 10, 1].forEach((p, i) => {
+        const whole = Math.floor(v / p);
+        let pos = whole % 10;
+        if (p === 1) pos = v % 10;
+        else { const below = v - whole * p; if (below > p - 1) pos += below - (p - 1); }
+        strips[i].style.transform = 'translate3d(0,' + (-pos).toFixed(4) + 'em,0)';
+      });
+    }
+    setYear(1956);
 
     function unlockScroll() {
       if (unlocked) return;
@@ -97,36 +107,29 @@
     let waiting = false;
 
     const tl = gsap.timeline({ onComplete: finish });
-    // Yalnızca transform + opacity: GPU'da akıcı, yerleşim (layout) tetiklemez.
-    tl.fromTo('.intro__label', { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.6 * k, ease: 'power3.out' }, 0.05)
-      .fromTo('.intro__count', { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.7 * k, ease: 'power3.out' }, 0.1)
-      // 1956 → 2026: yavaş başlar, giderek hızlanır; yükleme çubuğu ve kıvılcım aynı eğriyle ilerler
-      .addLabel('count', 0.35 * k)
-      .to(yr, {
-        v: 2026, duration: 2.5 * k, ease: 'power3.in',
-        onUpdate() {
-          const y = Math.round(yr.v);
-          if (y !== lastYear) { lastYear = y; numEl.textContent = y; }
-        },
-      }, 'count')
-      .to('.intro__fill', { scaleX: 1, duration: 2.5 * k, ease: 'power3.in' }, 'count')
-      .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: 2.5 * k, ease: 'power3.in' }, 'count')
-      // Varış: 2026 hafifçe oturur
-      .fromTo('.intro__year', { scale: 1 }, { scale: 1.035, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 }, '>-0.02')
-      .addPause('>', () => { if (pageReady) requestAnimationFrame(() => tl.resume()); else waiting = true; })
-      // Sayaç yukarı çekilir, Miras sahnesi açılır
-      .to('.intro__count', { autoAlpha: 0, y: -34, duration: 0.55 * k, ease: 'power3.in' }, '+=0.25')
-      .to('.intro__label', { autoAlpha: 0, y: -10, duration: 0.45 * k, ease: 'power2.in' }, '<')
-      .to('.intro__line', { scaleX: 1, duration: 1.0 * k, ease: 'expo.inOut' }, '-=0.12')
-      .to('.intro__m', { y: 0, duration: 0.9 * k, stagger: 0.07 * k, ease: 'expo.out' }, '-=0.62')
-      .fromTo('.intro__sub', { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.6 * k, ease: 'power3.out' }, '-=0.6')
-      // Siteye geçiş: içerik yukarı süzülür, perdeler açılır
-      .to(['.intro__legacy', '.intro__skip'], { autoAlpha: 0, y: -16, duration: 0.45, ease: 'power2.in' }, `+=${0.55 * k}`)
-      .to('.intro__panel--l', { xPercent: -101, duration: 0.9, ease: 'expo.inOut', force3D: true }, '-=0.1')
-      .to('.intro__panel--r', { xPercent: 101, duration: 0.9, ease: 'expo.inOut', force3D: true }, '<')
-      .add(unlockScroll, '<0.28')
-      .to('.film__cue', { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<0.18')
-      .to(header, { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<');
+    // Yalnızca transform / opacity / kısa süreli blur: ölçek (büyüme) animasyonu yok.
+    tl.fromTo('.intro__label', { autoAlpha: 0, letterSpacing: '.72em' }, { autoAlpha: 1, letterSpacing: '.46em', duration: 1.1 * k, ease: 'expo.out' }, 0.05)
+      .fromTo('.intro__count', { autoAlpha: 0, y: 14, filter: 'blur(10px)' }, { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 0.9 * k, ease: 'power3.out', clearProps: 'filter' }, 0.12)
+      // 1956 → 2026: yavaş başlar, giderek hızlanır; çubuk ve ışık noktası aynı eğriyle ilerler
+      .addLabel('count', 0.45 * k)
+      .to(yr, { v: 2026, duration: 2.6 * k, ease: 'power3.in', onUpdate: () => setYear(yr.v) }, 'count')
+      .to('.intro__fill', { scaleX: 1, duration: 2.6 * k, ease: 'power3.in' }, 'count')
+      .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: 2.6 * k, ease: 'power3.in' }, 'count')
+      .to('.intro__spark', { autoAlpha: 0, duration: 0.5, ease: 'power2.out' }, '>')
+      .addPause('>-0.3', () => { if (pageReady) requestAnimationFrame(() => tl.resume()); else waiting = true; })
+      // Sayaç 2026'da kalır; çubuk söner, altında çizgi soldan sağa günümüze uzanır ve söz belirir (çakışma yok)
+      .to('.intro__bar', { autoAlpha: 0, y: -6, duration: 0.6 * k, ease: 'power2.inOut' }, '+=0.15')
+      .to('.intro__line', { scaleX: 1, duration: 1.3 * k, ease: 'expo.inOut' }, '-=0.25')
+      .fromTo('.intro__quote',
+        { autoAlpha: 0, y: 8, filter: 'blur(8px)' },
+        { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 1.2 * k, ease: 'power3.out' }, '-=0.75')
+      // Siteye geçiş: içerik yumuşakça dağılır, perdeler kademeli olarak yukarı kalkar
+      .to(['.intro__content', '.intro__skip'], { autoAlpha: 0, y: -10, filter: 'blur(8px)', duration: 0.65, ease: 'power2.in' }, `+=${0.6 * k}`)
+      .to('.intro__panel--l', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '-=0.18')
+      .to('.intro__panel--r', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '<0.09')
+      .add(unlockScroll, '<0.3')
+      .to('.film__cue', { autoAlpha: 1, duration: 0.6, ease: 'power2.out' }, '<0.2')
+      .to(header, { autoAlpha: 1, duration: 0.6, ease: 'power2.out' }, '<');
 
     let skipped = false;
     const skip = () => {
