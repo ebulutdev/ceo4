@@ -18,7 +18,6 @@
   let lenis = null;
   let menuOpen = false;
   let warmCity = null;
-  let filmPump = null;
 
   const intro = $('.intro');
 
@@ -87,7 +86,6 @@
       intro.style.pointerEvents = 'none';
       html.classList.remove('intro-lock');
       lenis.start();
-      if (filmPump) filmPump();
     }
 
     const tl = gsap.timeline({ onComplete: finish });
@@ -126,7 +124,6 @@
       introDone = true;
       unlockScroll();
       intro.classList.add('is-done');
-      if (warmCity) setTimeout(warmCity, 700);
     }
   }
 
@@ -147,96 +144,232 @@
   function initFilm() {
     const sec = $('.film');
     const canvas = $('.film__canvas', sec);
+    const posterImg = $('.film__poster img', sec);
+    // 1. Opak ve düşük gecikmeli 2D bağlamı (alfa harmanlama maliyetini sıfırlar)
     const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true }) || canvas.getContext('2d');
     const isMob = innerWidth < 768;
-    const cfg = isMob ? { dir: 'm', n: 90, startF: 4, maxW: 720 } : { dir: 'd', n: 120, startF: 6, maxW: 1600 };
-    const frames = new Array(cfg.n).fill(null);
-    const src = (i) => `assets/film/${cfg.dir}/${String(i + 1).padStart(3, '0')}.webp`;
-    let want = cfg.startF, drawn = -1, queued = false;
+    const cfg = isMob
+      ? { dir: 'm', n: 90, startF: 4, maxW: 720, maxH: 960 }
+      : { dir: 'd', n: 120, startF: 6, maxW: 1920, maxH: 1080 };
 
-    function fit() {
-      const cw = Math.max(1, canvas.clientWidth);
-      const ch = Math.max(1, canvas.clientHeight);
-      const dpr = Math.min(devicePixelRatio || 1, 1.5, cfg.maxW / cw);
-      canvas.width = Math.round(cw * dpr);
-      canvas.height = Math.round(ch * dpr);
-      if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'medium';
-      }
-      drawn = -1; draw();
-    }
-    // Bellek: tüm kareler sıkıştırılmış <img> olarak tutulur; yalnızca o anki karenin çevresindeki
-    // küçük bir pencere çözülmüş bitmap olarak bellekte kalır (önceden 120 × ~8 MB tutuluyordu).
-    const WINDOW = isMob ? 6 : 10;
+    // İki katmanlı bellek:
+    // Katman 1: Sıkıştırılmış WebP Blob dizisi (~8.3 MB RAM, ömür boyu kalıcı)
+    // Katman 2: Kaydırma yönlü asimetrik ImageBitmap penceresi (+24 ileri, -10 geri; resizeWidth olmadan ~1.5 ms Worker decode)
+    const WIN_AHEAD = isMob ? 16 : 24;
+    const WIN_BEHIND = isMob ? 6 : 10;
+    const MAX_DECODE = 4;
+
+    const blobs = new Array(cfg.n).fill(null);
     const bitmaps = new Map();
-    const pending = new Set();
-    function warmAround(c) {
-      if (typeof createImageBitmap !== 'function') return;
-      for (let k = -WINDOW; k <= WINDOW; k++) {
-        const i = c + k;
-        if (i < 0 || i >= cfg.n || !frames[i] || bitmaps.has(i) || pending.has(i)) continue;
-        pending.add(i);
-        createImageBitmap(frames[i], { resizeWidth: canvas.width || cfg.maxW, resizeQuality: 'medium' })
-          .then((b) => {
-            pending.delete(i);
-            if (Math.abs(i - want) > WINDOW + 2) { b.close(); return; }
-            bitmaps.set(i, b);
-            if (i === want) request();
-          }, () => pending.delete(i));
+    const decoding = new Set();
+    const fetching = new Set();
+    const src = (i) => `assets/film/${cfg.dir}/${String(i + 1).padStart(3, '0')}.webp`;
+
+    let want = cfg.startF;
+    let drawn = -1;
+    let scrollDir = 1;
+    let rafId = 0;
+
+    // 2. En-boy oranını koruyan DPR tavanlı canvas boyutlandırma (4K ekranlarda aşırı piksel boyamayı önler)
+    function fit() {
+      const cw = Math.max(1, canvas.clientWidth || innerWidth);
+      const ch = Math.max(1, canvas.clientHeight || innerHeight);
+      const dpr = Math.min(devicePixelRatio || 1, 2, cfg.maxW / cw, cfg.maxH / ch);
+      const targetW = Math.max(1, Math.round(cw * dpr));
+      const targetH = Math.max(1, Math.round(ch * dpr));
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'medium';
+        }
+        drawn = -1;
+        drawSync();
       }
-      for (const [i, b] of bitmaps) if (Math.abs(i - c) > WINDOW + 2) { b.close(); bitmaps.delete(i); }
     }
-    function draw() {
-      let i = -1;
-      for (let k = 0; k < cfg.n && i < 0; k++) {
-        if (frames[want + k]) i = want + k;
-        else if (frames[want - k]) i = want - k;
-      }
-      if (i < 0) return;
-      warmAround(want);
-      if (i === drawn) return;
-      const im = bitmaps.get(i) || frames[i];
+
+    // 3. GPU hızlandırmalı cover çizimi (CPU üzerinde yazılımsal resizeWidth kullanılmaz)
+    function drawSource(im, idx) {
+      const cw = canvas.width;
+      const ch = canvas.height;
       const iw = im.width || im.naturalWidth;
       const ih = im.height || im.naturalHeight;
-      const s = Math.max(canvas.width / iw, canvas.height / ih);
-      const w = iw * s, h = ih * s;
-      ctx.drawImage(im, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
-      drawn = i;
+      if (!cw || !ch || !iw || !ih) return;
+      const s = Math.max(cw / iw, ch / ih);
+      const dw = iw * s;
+      const dh = ih * s;
+      ctx.drawImage(im, (cw - dw) * 0.5, (ch - dh) * 0.5, dw, dh);
+      drawn = idx;
       if (!sec.classList.contains('is-ready')) sec.classList.add('is-ready');
     }
-    function request() { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; draw(); }); }
-    function load(i) {
-      if (i < 0 || i >= cfg.n || frames[i]) return;
-      const im = new Image();
-      im.decoding = 'async';
-      im.src = src(i);
-      const store = () => {
-        frames[i] = im;
-        if (drawn < 0 || i === want || Math.abs(i - want) < Math.abs(drawn - want)) request();
-      };
-      (im.decode ? im.decode() : Promise.reject()).then(store, () => { im.onload = store; if (im.complete) store(); });
+
+    function findBestFrame(target) {
+      if (bitmaps.has(target)) return target;
+      let best = -1;
+      let minDist = Infinity;
+      for (const k of bitmaps.keys()) {
+        const dist = Math.abs(k - target);
+        if (dist < minDist) { minDist = dist; best = k; }
+      }
+      return best;
     }
 
-    // Açılış animasyonu oynarken ana iş parçacığını yormamak için yalnızca ilk kare hazırlanır;
-    // diğer kareler perde açılırken (unlockScroll) arka planda sırayla çözülür.
-    load(0);
-    load(cfg.startF);
-    let nextIdx = cfg.startF + 1;
-    let pumping = false;
-    const pump = () => {
-      if (pumping) return;
-      pumping = true;
-      const step = () => {
-        for (let n = 0; n < 4 && nextIdx < cfg.n; n++) load(nextIdx++);
-        for (let i = 1; i < cfg.startF; i++) load(i);
-        if (nextIdx < cfg.n) (window.requestIdleCallback ? requestIdleCallback(step, { timeout: 200 }) : setTimeout(step, 50));
+    function drawSync() {
+      const idx = findBestFrame(want);
+      if (idx >= 0 && idx !== drawn) {
+        drawSource(bitmaps.get(idx), idx);
+      } else if (drawn < 0 && posterImg && posterImg.complete && posterImg.naturalWidth > 0) {
+        drawSource(posterImg, cfg.startF);
+      }
+      syncBitmapWindow();
+    }
+
+    function scheduleDraw() {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        drawSync();
+      });
+    }
+
+    // 4. Öncelikli Worker decode kuyruğu (want'a en yakın kare her zaman ilk sırada çözülür)
+    function windowBounds() {
+      const start = Math.max(cfg.startF, want - (scrollDir > 0 ? WIN_BEHIND : WIN_AHEAD));
+      const end = Math.min(cfg.n - 1, want + (scrollDir > 0 ? WIN_AHEAD : WIN_BEHIND));
+      return [start, end];
+    }
+
+    function pickNextToDecode() {
+      const [start, end] = windowBounds();
+      const maxSpan = Math.max(WIN_AHEAD, WIN_BEHIND);
+      for (let dist = 0; dist <= maxSpan; dist++) {
+        const fwd = want + dist * scrollDir;
+        if (fwd >= start && fwd <= end && blobs[fwd] && !bitmaps.has(fwd) && !decoding.has(fwd)) return fwd;
+        const bwd = want - dist * scrollDir;
+        if (bwd >= start && bwd <= end && blobs[bwd] && !bitmaps.has(bwd) && !decoding.has(bwd)) return bwd;
+      }
+      return -1;
+    }
+
+    function pumpDecode() {
+      if (typeof createImageBitmap !== 'function') return;
+      while (decoding.size < MAX_DECODE) {
+        const i = pickNextToDecode();
+        if (i === -1) break;
+        decoding.add(i);
+        createImageBitmap(blobs[i]).then((bmp) => {
+          decoding.delete(i);
+          const [start, end] = windowBounds();
+          if (i < start - 4 || i > end + 4) {
+            bmp.close();
+          } else {
+            bitmaps.set(i, bmp);
+            if (i === want || drawn < 0 || Math.abs(i - want) < Math.abs(drawn - want)) {
+              scheduleDraw();
+            }
+          }
+          pumpDecode();
+        }, () => {
+          decoding.delete(i);
+          pumpDecode();
+        });
+      }
+    }
+
+    // 5. Yönlü ImageBitmap pencere yönetimi (pencere dışındaki uzak bitmap'leri VRAM'den temizler, Blob'lar RAM'de kalır)
+    function syncBitmapWindow() {
+      const [start, end] = windowBounds();
+      for (const [k, bmp] of bitmaps) {
+        if (k < start - 4 || k > end + 4) {
+          bmp.close();
+          bitmaps.delete(k);
+        }
+      }
+      pumpDecode();
+    }
+
+    // Preload edilen poster görselinden ilk kareyi 0 ms gecikmeyle hazırla
+    if (posterImg) {
+      const warmPoster = () => {
+        if (drawn < 0) drawSync();
+        if (typeof createImageBitmap === 'function' && !bitmaps.has(cfg.startF) && posterImg.naturalWidth > 0) {
+          createImageBitmap(posterImg).then((bmp) => {
+            if (!bitmaps.has(cfg.startF)) {
+              bitmaps.set(cfg.startF, bmp);
+              if (want === cfg.startF && drawn !== cfg.startF) scheduleDraw();
+            } else {
+              bmp.close();
+            }
+          }, () => {});
+        }
       };
-      step();
-    };
-    filmPump = pump;
+      if (posterImg.complete && posterImg.naturalWidth > 0) warmPoster();
+      else posterImg.addEventListener('load', warmPoster, { once: true });
+    }
+
+    // 6. 3 fazlı örgülü (4n -> 2n -> 2n+1) + dinamik hedef (want) odaklı ağ kuyruğu
+    const priorityOrder = [];
+    const seenOrder = new Set();
+    for (const step of [4, 2, 1]) {
+      for (let i = cfg.startF; i < cfg.n; i += step) {
+        if (!seenOrder.has(i)) {
+          seenOrder.add(i);
+          priorityOrder.push(i);
+        }
+      }
+    }
+
+    function pickNextFrameToFetch() {
+      if (!blobs[want] && !fetching.has(want)) return want;
+      const [start, end] = windowBounds();
+      for (let dist = 1; dist <= WIN_AHEAD; dist++) {
+        const fwd = want + dist * scrollDir;
+        if (fwd >= start && fwd <= end && !blobs[fwd] && !fetching.has(fwd)) return fwd;
+      }
+      for (let i = start; i <= end; i++) {
+        if (!blobs[i] && !fetching.has(i)) return i;
+      }
+      for (const i of priorityOrder) {
+        if (!blobs[i] && !fetching.has(i)) return i;
+      }
+      return -1;
+    }
+
+    let storyWarmed = false;
+    function warmStoryImages() {
+      if (storyWarmed) return;
+      storyWarmed = true;
+      $$('.story__img img').forEach((im) => {
+        if (im.decode) im.decode().catch(() => {});
+      });
+    }
+
+    async function fetchWorker() {
+      while (true) {
+        const i = pickNextFrameToFetch();
+        if (i === -1) {
+          warmStoryImages();
+          break;
+        }
+        fetching.add(i);
+        try {
+          const res = await fetch(src(i), { priority: i === cfg.startF ? 'high' : 'auto' });
+          if (res.ok) {
+            blobs[i] = await res.blob();
+            pumpDecode();
+          }
+        } catch (e) {
+          /* ağ hatası */
+        } finally {
+          fetching.delete(i);
+        }
+      }
+    }
 
     new ResizeObserver(fit).observe(canvas);
+    fit();
+    for (let c = 0; c < 6; c++) fetchWorker();
 
     const lines = $$('.film__name .mask > span', sec);
     const meta = [$('.film__eyebrow', sec), $('.film__role', sec)];
@@ -245,7 +378,7 @@
     gsap.set('.film__title', { autoAlpha: 0 });
     const obj = { f: cfg.startF };
 
-    // scrub: true ile Lenis'e 1:1 bağlanır (ekstra gecikme yok); ilk pikselde kamera hemen ilerler
+    // 7. ScrollTrigger: scrub: true ile Lenis'e 1:1 bağlanır ve rAF içindeyken senkron drawSync() çağrılır (0 kare gecikme)
     gsap.timeline({
       defaults: { ease: 'none', immediateRender: false },
       scrollTrigger: {
@@ -253,10 +386,22 @@
         end: () => (isDesk() ? '+=200%' : '+=165%'),
         pin: '.film__pin', scrub: true,
         invalidateOnRefresh: true,
+        onLeave: () => { if (warmCity) warmCity(); },
       },
     })
       .fromTo('.film__cue', { autoAlpha: 1 }, { autoAlpha: 0, duration: 0.06, immediateRender: false }, 0)
-      .fromTo(obj, { f: cfg.startF }, { f: cfg.n - 1, duration: 0.92, onUpdate: () => { want = Math.round(obj.f); request(); } }, 0)
+      .fromTo(obj, { f: cfg.startF }, {
+        f: cfg.n - 1,
+        duration: 0.92,
+        onUpdate: () => {
+          const nextWant = Math.min(cfg.n - 1, Math.max(cfg.startF, Math.round(obj.f)));
+          if (nextWant !== want) {
+            scrollDir = nextWant > want ? 1 : -1;
+            want = nextWant;
+            drawSync();
+          }
+        },
+      }, 0)
       .fromTo('.film__shade', { opacity: 0 }, { opacity: 1, duration: 0.24 }, 0.52)
       .fromTo('.film__title', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.02, immediateRender: false }, 0.56)
       .fromTo(lines, { yPercent: 150 }, { yPercent: 0, duration: 0.22, stagger: 0.04, ease: 'power3.out' }, 0.57)
@@ -725,9 +870,14 @@
   initAnchors();
   if (fine) { initCursor(); initMagnetic(); }
 
-  // Görseller geç yüklendiğinde konumları tazele (açılış animasyonu oynarken araya girip takılma yapmasın)
+  // Görseller geç yüklendiğinde konumları tazele (aktif kaydırma sırasında araya girip takılma yapmasın)
   addEventListener('load', () => {
-    if (introDone) ScrollTrigger.refresh();
+    if (!introDone) return;
+    const refreshWhenIdle = () => {
+      if (lenis && lenis.isScrolling) setTimeout(refreshWhenIdle, 180);
+      else ScrollTrigger.refresh();
+    };
+    refreshWhenIdle();
   });
 
   // ======================================================================

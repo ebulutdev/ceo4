@@ -208,6 +208,10 @@ export async function createCity(host, { mobile = false, logoUrl }) {
   slab.castShadow = slab.receiveShadow = true;
   scene.add(slab);
 
+  // Ana iş parçacığını bloklamamak için ağır kurulum adımları arasında tarayıcıya nefes aldır
+  const yieldThread = () => new Promise((r) => setTimeout(r, 0));
+  await yieldThread();
+
   // ---- Katlar (her kat ayrı nesne) ----
   const types = {
     podium: { w: 32, d: 32, spacing: 2.4, balcony: false },
@@ -324,7 +328,7 @@ export async function createCity(host, { mobile = false, logoUrl }) {
     }
     sctx.putImageData(id, 0, 0);
     const out = document.createElement('canvas');
-    out.width = w * 4; out.height = h * 4;
+    out.width = w * 2; out.height = h * 2;
     const octx = out.getContext('2d');
     octx.imageSmoothingEnabled = true;
     octx.imageSmoothingQuality = 'high';
@@ -335,6 +339,7 @@ export async function createCity(host, { mobile = false, logoUrl }) {
     rawLogoTex.dispose();
     return tex;
   })();
+  await yieldThread();
   const aspect = rawLogoTex.image.width / rawLogoTex.image.height;
   const LW = 15, LH = LW / aspect;
   const logoMat = new THREE.MeshStandardMaterial({
@@ -600,13 +605,25 @@ export async function createCity(host, { mobile = false, logoUrl }) {
     dirty = false;
   }
 
+  // Sahne görünür olmadan önce tüm materyal shader'larını arka planda (KHR_parallel_shader_compile) derle;
+  // böylece ilk görünür karede 60-150 ms'lik senkron shader derleme takılması yaşanmaz.
+  floors.forEach((f) => { f.visible = true; });
+  crown.visible = true;
+  signs.visible = true;
+  wire.visible = true;
+  if (typeof renderer.compileAsync === 'function') {
+    try { await renderer.compileAsync(scene, camera); } catch (e) { /* desteklenmeyen ortam */ }
+  } else if (typeof renderer.compile === 'function') {
+    await yieldThread();
+    renderer.compile(scene, camera);
+  }
+  built = apply(progress);
+
   const io = new IntersectionObserver(([e]) => {
     if (e.isIntersecting && !running) { running = true; dirty = true; raf = requestAnimationFrame(tick); }
     else if (!e.isIntersecting && running) { running = false; cancelAnimationFrame(raf); }
   });
   io.observe(host);
-
-  built = apply(0);
 
   return {
     floors: N,

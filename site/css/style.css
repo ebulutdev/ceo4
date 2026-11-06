@@ -251,12 +251,13 @@ html.intro-lock body { touch-action: none; }
 .film__poster img, .film__canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .film__canvas { opacity: 0; }
 .film.is-ready .film__canvas { opacity: 1; }
+.film.is-ready .film__poster img { visibility: hidden; }
 .no-motion .film__canvas { display: none; }
 .film__pin::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, rgba(14, 15, 16, .55) 0%, rgba(14, 15, 16, 0) 22%, rgba(14, 15, 16, 0) 70%, rgba(14, 15, 16, .6) 100%);
 }
-.film__shade { position: absolute; inset: 0; z-index: 1; background: radial-gradient(ellipse at 50% 52%, rgba(10, 11, 12, .64) 0%, rgba(10, 11, 12, .85) 100%); opacity: 0; }
+.film__shade { position: absolute; inset: 0; z-index: 1; background: radial-gradient(ellipse at 50% 52%, rgba(10, 11, 12, .64) 0%, rgba(10, 11, 12, .85) 100%); opacity: 0; will-change: opacity; }
 .no-motion .film__shade { opacity: 1; }
 .film__cue {
   position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(24px + env(safe-area-inset-bottom)); margin: 0 auto;
@@ -298,7 +299,7 @@ html.intro-lock body { touch-action: none; }
 .story { position: relative; background: var(--anthracite); color: var(--white); }
 .story__pin { position: relative; height: 100svh; min-height: 540px; overflow: hidden; }
 .story__media, .story__img { position: absolute; inset: 0; }
-.story__img { overflow: hidden; }
+.story__img { overflow: hidden; will-change: clip-path; }
 .story__img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 26%; will-change: transform; }
 .story__shade {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
@@ -718,7 +719,7 @@ a.eco__row:hover .eco__t { transform: translateX(12px); }
 
 /* ---------- Sahne geçiş perdesi ---------- */
 .scene-wipe { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
-.film__title { will-change: auto; transform-origin: 50% 50%; }
+.film__title { will-change: opacity; transform-origin: 50% 50%; }
 .quotes__inner { width: 100%; }
 /* Video üzerinde hafif karartma: görüntü daha derin ve net okunur */
 .film__pin::before { content: ""; position: absolute; inset: 0; z-index: 1; background: rgba(10, 11, 12, .16); pointer-events: none; }
