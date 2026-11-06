@@ -503,7 +503,7 @@
     const host = $('.city__canvas', sec);
     const words = $$('.city__word', sec);
     const descs = $$('.city__desc-item', sec);
-    const PH = [0, 0.14, 0.32, 0.44, 0.86];
+    const PH = [0, 0.14, 0.32, 0.52, 0.86];
     let api = null;
     let prog = 0;
     let phase = 0;
@@ -547,7 +547,7 @@
 
     ScrollTrigger.create({
       trigger: sec, start: 'top top',
-      end: () => (isDesk() ? '+=280%' : '+=220%'),
+      end: () => (isDesk() ? '+=360%' : '+=290%'),
       pin: '.city__pin', pinSpacing: true,
       invalidateOnRefresh: true,
       onUpdate: (self) => update(self.progress),

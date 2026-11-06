@@ -7,7 +7,8 @@ const FH = 3.5;            // kat yüksekliği (11 kat ≈ 38.5 m)
 const SLAB_TOP = 0.8;      // temel plağı üst kotu
 
 // Faz sınırları (main.js ile aynı)
-export const PHASES = [0, 0.14, 0.32, 0.44, 0.86];
+export const PHASES = [0, 0.14, 0.32, 0.52, 0.86];
+const BUILD0 = 0.52, BUILD_SPAN = 0.32; // Yapı fazı: 0.52 → 0.84 kat kat yükselir
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const smooth = (v) => { v = clamp01(v); return v * v * (3 - 2 * v); };
@@ -296,56 +297,103 @@ function defneRoomAtlas() {
 }
 
 
-// Zemin kat ticari vitrin (fırın / kafe / mağaza) dokusu — fotoğraftaki sıcak vitrinler
+// Zemin kat dükkan iç mekân arka duvarları — 4 farklı dükkan (kafe, fırın, butik, lobi), 2048x512 atlas.
+// Camın 3.2 m gerisindeki gerçek iç hacmin arka duvarına kaplanır; ön planda 3D tezgâh, lamba ve doğrama vardır.
 function podiumStorefrontTexture() {
+  const W = 2048, Hc = 512, CW = W / 4;
   const c = document.createElement('canvas');
-  c.width = 1024; c.height = 256;
+  c.width = W; c.height = Hc;
   const x = c.getContext('2d');
-  x.fillStyle = '#16181C';
-  x.fillRect(0, 0, 1024, 256);
+  let s = 21;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
 
-  const shops = 4;
-  const sw = 1024 / shops;
-  for (let s = 0; s < shops; s++) {
-    const x0 = s * sw + 10, w = sw - 20;
-    const g = x.createLinearGradient(x0, 10, x0, 246);
-    g.addColorStop(0.0, '#FFF4C2');
-    g.addColorStop(0.32, '#FFC456');
-    g.addColorStop(0.75, '#D87D28');
-    g.addColorStop(1.0, '#4A2810');
-    x.fillStyle = g;
-    x.fillRect(x0, 10, w, 236);
-
-    // Sarkıt kafe lambaları (üstte sıcak ışık noktaları)
-    for (let l = 1; l <= 3; l++) {
-      const lx = x0 + (w * l) / 4;
-      x.fillStyle = '#222';
-      x.fillRect(lx - 1, 10, 2, 34);
-      x.fillStyle = '#FFFBE0';
-      x.beginPath(); x.arc(lx, 48, 9, 0, Math.PI * 2); x.fill();
+  const wallTone = ['#6B4128', '#7A5232', '#5E4A3E', '#77695A'];
+  for (let k = 0; k < 4; k++) {
+    const x0 = k * CW;
+    // Arka duvar: sıcak gizli LED ile tavandan aşağı yıkanan ışık
+    const g = x.createLinearGradient(0, 0, 0, Hc);
+    g.addColorStop(0, '#FFE2A8'); g.addColorStop(0.18, '#E7A866'); g.addColorStop(0.62, wallTone[k]); g.addColorStop(1, '#2A1C14');
+    x.fillStyle = g; x.fillRect(x0, 0, CW, Hc);
+    // Duvar spotlarının ışık konileri
+    for (let i = 0; i < 4; i++) {
+      const lx = x0 + CW * (i + 0.5) / 4;
+      const cg = x.createRadialGradient(lx, 30, 4, lx, 110, 150);
+      cg.addColorStop(0, 'rgba(255,246,214,0.85)'); cg.addColorStop(1, 'rgba(255,200,120,0)');
+      x.fillStyle = cg; x.fillRect(lx - 150, 0, 300, 300);
     }
+    x.fillStyle = 'rgba(20,12,8,0.35)'; x.fillRect(x0, 0, 3, Hc);
 
-    // Arka raf / vitrin tezgahı silüetleri
-    x.fillStyle = 'rgba(58, 30, 12, 0.55)';
-    for (let r = 0; r < 3; r++) {
-      x.fillRect(x0 + 18, 72 + r * 26, w * 0.55, 6);
+    if (k === 0 || k === 1) {
+      // Kafe / fırın: ahşap raflar, ürünler, ışıklı menü panosu
+      x.fillStyle = 'rgba(40,24,14,0.9)';
+      x.fillRect(x0 + 40, 70, 150, 92);
+      x.fillStyle = 'rgba(255,240,205,0.9)';
+      for (let l = 0; l < 6; l++) x.fillRect(x0 + 52, 82 + l * 13, 60 + r() * 60, 4);
+      for (let sh = 0; sh < 3; sh++) {
+        const y = 210 + sh * 70;
+        x.fillStyle = '#4A2C18'; x.fillRect(x0 + 230, y, 250, 9);
+        for (let it = 0; it < 11; it++) {
+          const ix = x0 + 238 + it * 22, ih = 18 + r() * 24;
+          x.fillStyle = k === 1 ? `hsl(${28 + r() * 12}, ${55 + r() * 20}%, ${42 + r() * 18}%)` : `hsl(${r() * 360}, 35%, ${38 + r() * 25}%)`;
+          if (k === 1) { x.beginPath(); x.ellipse(ix + 9, y - 10, 10, 9, 0, 0, Math.PI * 2); x.fill(); }
+          else x.fillRect(ix, y - ih, 14, ih);
+        }
+      }
+    } else if (k === 2) {
+      // Butik: askılı giysi rafları ve ışıklı vitrin nişleri
+      for (let n = 0; n < 3; n++) {
+        const nx = x0 + 40 + n * 155;
+        x.fillStyle = 'rgba(255,236,200,0.55)'; x.fillRect(nx, 80, 120, 240);
+        x.fillStyle = '#2B2420'; x.fillRect(nx + 6, 120, 108, 4);
+        for (let it = 0; it < 7; it++) {
+          x.fillStyle = `hsl(${(n * 70 + it * 25) % 360}, 30%, ${30 + r() * 30}%)`;
+          x.fillRect(nx + 10 + it * 15, 124, 11, 90 + r() * 50);
+        }
+      }
+    } else {
+      // Lobi: mermer kaplama, ışıklı sanat panosu, asansör kapıları
+      x.fillStyle = 'rgba(235,225,210,0.5)'; x.fillRect(x0, 60, CW, 330);
+      for (let v = 0; v < 26; v++) {
+        x.strokeStyle = `rgba(120,100,80,${0.08 + r() * 0.12})`; x.lineWidth = 1 + r() * 2;
+        x.beginPath(); x.moveTo(x0 + r() * CW, 60); x.bezierCurveTo(x0 + r() * CW, 160, x0 + r() * CW, 260, x0 + r() * CW, 390); x.stroke();
+      }
+      x.fillStyle = '#B88A4A'; x.fillRect(x0 + 60, 120, 170, 120);
+      x.fillStyle = '#2A2622'; x.fillRect(x0 + 300, 150, 70, 240); x.fillRect(x0 + 390, 150, 70, 240);
+      x.fillStyle = 'rgba(255,220,160,0.7)'; x.fillRect(x0 + 300, 140, 160, 4);
     }
-    // Tezgah
-    x.fillStyle = 'rgba(42, 22, 10, 0.72)';
-    x.fillRect(x0 + 14, 172, w - 28, 70);
-    x.fillStyle = 'rgba(255, 230, 165, 0.55)';
-    x.fillRect(x0 + 22, 178, w * 0.42, 28);
-
-    // Siyah ince vitrin doğramaları
-    x.fillStyle = '#181A1F';
-    x.fillRect(x0 + w * 0.5 - 2, 10, 4, 236);
-    x.fillRect(x0, 64, w, 4);
+    // İnsan silüetleri (yumuşak, odak dışı)
+    for (let pp = 0; pp < 2 + (k % 2); pp++) {
+      const px = x0 + 60 + r() * (CW - 120), ph = 150 + r() * 40;
+      x.fillStyle = 'rgba(24,16,12,0.55)';
+      x.beginPath(); x.ellipse(px, Hc - ph - 6, 13, 16, 0, 0, Math.PI * 2); x.fill();
+      x.fillRect(px - 20, Hc - ph + 10, 40, ph - 10);
+    }
+    // Zemin süpürgelik
+    x.fillStyle = 'rgba(18,12,8,0.8)'; x.fillRect(x0, Hc - 28, CW, 28);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
+
+// Dükkan tavanı: sıcak opal tavan + gömme downlight ızgarası
+function shopCeilingTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = '#6A4A32'; x.fillRect(0, 0, 128, 128);
+  for (const [px, py] of [[32, 32], [96, 32], [32, 96], [96, 96]]) {
+    const g = x.createRadialGradient(px, py, 2, px, py, 30);
+    g.addColorStop(0, '#FFF8E0'); g.addColorStop(0.25, '#FFD9A0'); g.addColorStop(1, 'rgba(106,74,50,0)');
+    x.fillStyle = g; x.fillRect(px - 32, py - 32, 64, 64);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 
 // Zemin: 64 m'lik kent ızgarası — ada içleri canlı yeşil çim peyzajlı, çevresi taş kaldırım ve gün batımı yansımalı asfalt
 const GRID = 64;
@@ -482,7 +530,7 @@ function createBloom(renderer, { strength = 0.6, threshold = 1.0 } = {}) {
   const vertexShader = 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }';
   const base = { vertexShader, depthTest: false, depthWrite: false };
 
-  const sceneRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  const sceneRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, stencilBuffer: true });
   const LV = 4;
   const rtOpts = { type: THREE.HalfFloatType, depthBuffer: false };
   const A = [], B = [];
@@ -564,7 +612,7 @@ export async function createCity(host, { mobile = false }) {
 
   const dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 1.75, 2000 / Math.max(1, host.clientWidth));
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(dpr);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -612,6 +660,7 @@ export async function createCity(host, { mobile = false }) {
   for (const t of [atlas.map, atlas.emissive, atlas.mr]) t.anisotropy = maxAniso;
   const shopTex = podiumStorefrontTexture();
   shopTex.anisotropy = maxAniso;
+  const shopCeilTex = shopCeilingTexture();
   const stoneTex = slateStoneTexture();
   stoneTex.anisotropy = maxAniso;
   const lawnTex = courtyardLawnTexture();
@@ -634,11 +683,22 @@ export async function createCity(host, { mobile = false }) {
       emissive: new THREE.Color(0xFFB45C), emissiveMap: atlas.emissive, emissiveIntensity: 1.0,
       envMapIntensity: 1.15,
     }),
+    // Dükkan arka duvarı (iç mekân) — camın 3.2 m gerisinde
     shopWindow: new THREE.MeshStandardMaterial({
-      map: shopTex, color: 0xffffff, roughness: 0.06, metalness: 0.6,
-      emissive: new THREE.Color(0xFFB444), emissiveMap: shopTex, emissiveIntensity: 1.55,
+      map: shopTex, color: 0xffffff, roughness: 0.85, metalness: 0,
+      emissive: new THREE.Color(0xFFC77A), emissiveMap: shopTex, emissiveIntensity: 1.0,
       envMapIntensity: 2.0,
     }),
+    // Vitrin camı: yarı saydam, pürüzsüz, gün batımını yansıtır; içerisi derinlikle görünür
+    shopGlass: new THREE.MeshStandardMaterial({
+      color: 0xC4CCD4, metalness: 1, roughness: 0.04, envMapIntensity: 1.8,
+      transparent: true, opacity: 0.22, depthWrite: false,
+    }),
+    shopCeil: new THREE.MeshStandardMaterial({
+      map: shopCeilTex, color: 0xffffff, roughness: 0.9,
+      emissive: new THREE.Color(0xFFD9A0), emissiveMap: shopCeilTex, emissiveIntensity: 1.1,
+    }),
+    shopFloor: new THREE.MeshStandardMaterial({ color: 0x6E5C4C, roughness: 0.16, metalness: 0.1 }),
     sconce: new THREE.MeshBasicMaterial({ color: new THREE.Color(0xFFE2A0).multiplyScalar(3.2) }),
     darkMetal: new THREE.MeshStandardMaterial({ color: 0x1A1C20, metalness: 0.8, roughness: 0.35 }),
     railing: new THREE.MeshStandardMaterial({ color: 0xDCEAF4, metalness: 0.35, roughness: 0.05, transparent: true, opacity: 0.38 }),
@@ -718,26 +778,336 @@ export async function createCity(host, { mobile = false }) {
   }
   scene.add(stakes);
 
-  // ---- Temel: kazıklar + plak ----
-  const piles = new THREE.Group();
-  const pileGeo = new THREE.CylinderGeometry(0.5, 0.5, 2.8, 10).translate(0, 1.4, 0);
-  for (const blk of BLOCKS) {
-    for (let i = -2; i <= 2; i++) for (let k = -1; k <= 1; k++) {
-      const p = new THREE.Mesh(pileGeo, M.whiteStone);
-      p.position.set(blk.x + i * 4.8, 0, blk.z + k * 6.5);
-      p.castShadow = !mobile;
-      piles.add(p);
-    }
-  }
-  scene.add(piles);
+  // ---- Temel: Mühendislik sırasıyla 7 adım ----
+  // 1 Kazı + İksa (fore kazık perde, başlık kirişi, kuşak kirişi, öngermeli ankraj)
+  // 2 Fore kazıklar (sondaj makinesi ile, başlarında filiz donatısı)
+  // 3 Grobeton  4 Su yalıtımı  5 Radye donatısı (alt+üst ızgara, perde filizleri)
+  // 6 Radye beton dökümü  7 Bodrum perdeleri + kolonlar + zemin kat döşemesi
+  // Çukur, zemini stencil ile "keserek" gösterilir: maske düzlemi stencil=1 yazar, zemin orada çizilmez.
+  const fdum = new THREE.Object3D();
+  const DEPTH = 6.0;                       // bodrum kazı derinliği
+  const PW = BW + 4.4, PD = BD + 4.4;      // kazı ölçüsü
+  const IW = PW - 1.5, ID = PD - 1.5;      // iksa iç yüzü arası net alan
+  const RAFT = 1.6;                        // radye kalınlığı
+  const PILE_L = 14;                       // görünür kazık boyu (sondajla zemine iner)
+  const FLOOR_Y = -DEPTH;
 
+  const strataTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 256;
+    const x = c.getContext('2d');
+    const bands = [['#5A4232', 0], ['#6E5038', 0.12], ['#7B5C3E', 0.3], ['#8A6A48', 0.52], ['#6B5544', 0.74], ['#59483C', 1]];
+    const g = x.createLinearGradient(0, 0, 0, 256);
+    for (const [cl, t] of bands) g.addColorStop(t, cl);
+    x.fillStyle = g; x.fillRect(0, 0, 64, 256);
+    let s = 3; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 900; i++) {
+      x.fillStyle = r() > 0.5 ? 'rgba(255,235,200,0.08)' : 'rgba(20,12,6,0.12)';
+      x.fillRect(Math.floor(r() * 64), Math.floor(r() * 256), 2, 1 + Math.floor(r() * 2));
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(10, 1);
+    return t;
+  })();
+
+  const FM = {
+    pit: new THREE.MeshStandardMaterial({ map: strataTex, roughness: 0.95, side: THREE.BackSide }),
+    concrete: new THREE.MeshStandardMaterial({ color: 0xA9A69F, roughness: 0.82 }),
+    freshConcrete: new THREE.MeshStandardMaterial({ color: 0x8E8C87, roughness: 0.3 }),
+    lean: new THREE.MeshStandardMaterial({ color: 0xBDB8AE, roughness: 0.9 }),
+    membrane: new THREE.MeshStandardMaterial({ color: 0x1F2329, roughness: 0.38, metalness: 0.15 }),
+    rebar: new THREE.MeshStandardMaterial({ color: 0x8A4A26, roughness: 0.55, metalness: 0.55 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x3C4248, roughness: 0.45, metalness: 0.7 }),
+    rig: new THREE.MeshStandardMaterial({ color: 0xE0A21C, roughness: 0.5, metalness: 0.2 }),
+    mask: new THREE.MeshBasicMaterial({
+      colorWrite: false, depthWrite: false,
+      stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc,
+      stencilZPass: THREE.ReplaceStencilOp,
+    }),
+  };
+  for (const m of [M.ground, M.soil]) {
+    m.stencilWrite = true; m.stencilRef = 1;
+    m.stencilFunc = THREE.NotEqualStencilFunc;
+    m.stencilZPass = THREE.KeepStencilOp; m.stencilFail = THREE.KeepStencilOp;
+  }
+
+  const fnd = BLOCKS.map((blk) => {
+    const g = new THREE.Group();
+    g.position.set(blk.x, 0, blk.z);
+    scene.add(g);
+    const shadow = (m) => { m.castShadow = m.receiveShadow = !mobile; return m; };
+
+    // Zemin kesme maskesi (stencil)
+    const mask = new THREE.Mesh(new THREE.PlaneGeometry(PW, PD).rotateX(-Math.PI / 2), FM.mask);
+    mask.position.y = 0.08;
+    mask.renderOrder = -10;
+    g.add(mask);
+
+    // 1. Kazı çukuru (iç yüzleri görünen kutu; derinliği kazıyla artar)
+    const pit = new THREE.Mesh(new THREE.BoxGeometry(PW, DEPTH, PD).translate(0, -DEPTH / 2, 0), FM.pit);
+    pit.receiveShadow = !mobile;
+    g.add(pit);
+
+    // İksa: sekant fore kazık perde (her 0.75 m), başlık kirişi, 2 sıra kuşak kirişi + ankraj başlıkları
+    const shoring = new THREE.Group();
+    g.add(shoring);
+    const wallPts = [];
+    for (let u = -PW / 2 + 0.6; u <= PW / 2 - 0.6; u += 0.75) { wallPts.push([u, PD / 2 - 0.35], [u, -PD / 2 + 0.35]); }
+    for (let v = -PD / 2 + 1.1; v <= PD / 2 - 1.1; v += 0.75) { wallPts.push([PW / 2 - 0.35, v], [-PW / 2 + 0.35, v]); }
+    const secant = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.4, DEPTH + 1.5, 10).translate(0, -(DEPTH + 1.5) / 2, 0), FM.concrete, wallPts.length);
+    wallPts.forEach(([u, v], k) => { fdum.position.set(u, 0, v); fdum.rotation.set(0, 0, 0); fdum.scale.set(1, 1, 1); fdum.updateMatrix(); secant.setMatrixAt(k, fdum.matrix); });
+    shoring.add(shadow(secant));
+    const ringBoxes = (y, h, t, inset) => [
+      { w: PW - inset * 2, h, d: t, y, z: PD / 2 - inset },
+      { w: PW - inset * 2, h, d: t, y, z: -(PD / 2 - inset) },
+      { w: t, h, d: PD - inset * 2, y, x: PW / 2 - inset },
+      { w: t, h, d: PD - inset * 2, y, x: -(PW / 2 - inset) },
+    ];
+    shoring.add(shadow(new THREE.Mesh(mergeBoxes(ringBoxes(-0.4, 0.8, 1.0, 0.4)), FM.concrete)));
+    const waler = [], anchors = [];
+    for (const wy of [-2.2, -4.2]) {
+      waler.push(...ringBoxes(wy, 0.42, 0.3, 0.92));
+      for (let u = -PW / 2 + 2; u <= PW / 2 - 2; u += 2.4) {
+        anchors.push({ w: 0.36, h: 0.36, d: 0.3, x: u, y: wy, z: PD / 2 - 1.2 }, { w: 0.36, h: 0.36, d: 0.3, x: u, y: wy, z: -(PD / 2 - 1.2) });
+      }
+      for (let v = -PD / 2 + 2; v <= PD / 2 - 2; v += 2.4) {
+        anchors.push({ w: 0.3, h: 0.36, d: 0.36, x: PW / 2 - 1.2, y: wy, z: v }, { w: 0.3, h: 0.36, d: 0.36, x: -(PW / 2 - 1.2), y: wy, z: v });
+      }
+    }
+    shoring.add(new THREE.Mesh(mergeBoxes(waler), FM.steel), new THREE.Mesh(mergeBoxes(anchors), FM.rig));
+
+    // 2. Fore kazıklar: 5 x 4 = 20 adet; sondaj makinesi kazıktan kazığa ilerler
+    const pilePts = [];
+    for (let k = 0; k < 4; k++) for (let i = 0; i < 5; i++) {
+      const ii = k % 2 ? 4 - i : i; // yılan sırası (makine en kısa yoldan ilerler)
+      pilePts.push([(ii - 2) * 4.9, (k - 1.5) * 5.6]);
+    }
+
+    const piles = pilePts.map(([u, v]) => {
+      const m = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, PILE_L, 14).translate(0, -PILE_L / 2, 0), FM.concrete));
+      m.position.set(u, FLOOR_Y + PILE_L, v);
+      m.visible = false;
+      g.add(m);
+      return m;
+    });
+    const starterGeo = mergeBoxes([0, 1, 2, 3, 4, 5].map((q) => {
+      const a = (q / 6) * Math.PI * 2;
+      return { w: 0.05, h: 1.1, d: 0.05, x: Math.cos(a) * 0.3, y: 0.55, z: Math.sin(a) * 0.3 };
+    }));
+    const starters = new THREE.InstancedMesh(starterGeo, FM.rebar, pilePts.length);
+    pilePts.forEach(([u, v], k) => { fdum.position.set(u, FLOOR_Y + 0.55, v); fdum.rotation.set(0, 0, 0); fdum.scale.set(1, 1, 1); fdum.updateMatrix(); starters.setMatrixAt(k, fdum.matrix); });
+    starters.count = 0;
+    g.add(starters);
+
+    const rig = new THREE.Group();
+    rig.add(
+      shadow(new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.7, 4.2).translate(0, 0.35, 0), FM.steel)),        // palet
+      shadow(new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 3.0).translate(0, 1.6, 0.4), FM.rig)),          // kabin + motor
+      shadow(new THREE.Mesh(new THREE.BoxGeometry(0.45, 17, 0.45).translate(0, 8.5, -1.4), FM.rig)),         // direk
+      shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 9, 8).translate(0, 4.5, -1.4), FM.steel))   // kelly bar / burgu
+    );
+    rig.visible = false;
+    g.add(rig);
+
+    // 3. Grobeton (10 cm) — soldan sağa dökülür
+    const lean = shadow(new THREE.Mesh(new THREE.BoxGeometry(IW, 0.12, ID).translate(IW / 2, 0.06, 0), FM.lean));
+    lean.position.set(-IW / 2, FLOOR_Y, 0);
+    g.add(lean);
+
+    // 4. Su yalıtımı: tabanda membran + perde yüzlerinde dikey membran
+    const memFloor = shadow(new THREE.Mesh(new THREE.BoxGeometry(IW, 0.04, ID).translate(0, 0, ID / 2), FM.membrane));
+    memFloor.position.set(0, FLOOR_Y + 0.14, -ID / 2);
+    g.add(memFloor);
+    const memWalls = new THREE.Mesh(mergeBoxes([
+      { w: IW, h: DEPTH, d: 0.05, y: DEPTH / 2, z: ID / 2 }, { w: IW, h: DEPTH, d: 0.05, y: DEPTH / 2, z: -ID / 2 },
+      { w: 0.05, h: DEPTH, d: ID, y: DEPTH / 2, x: IW / 2 }, { w: 0.05, h: DEPTH, d: ID, y: DEPTH / 2, x: -IW / 2 },
+    ]), FM.membrane);
+    memWalls.position.y = FLOOR_Y;
+    g.add(memWalls);
+
+    // 5. Radye donatısı: alt + üst ızgara ve perde filizleri (sırayla belirir)
+    const bars = [];
+    const S = 0.75, RW = IW - 0.6, RD = ID - 0.6;
+    for (const ly of [FLOOR_Y + 0.32, FLOOR_Y + RAFT - 0.12]) {
+      for (let u = -RW / 2; u <= RW / 2 + 1e-3; u += S) bars.push([u, ly + 0.035, 0, 0.06, 0.06, RD]);
+      for (let v = -RD / 2; v <= RD / 2 + 1e-3; v += S) bars.push([0, ly - 0.035, v, RW, 0.06, 0.06]);
+    }
+    for (let u = -RW / 2; u <= RW / 2 + 1e-3; u += S) for (const sv of [-1, 1]) bars.push([u, FLOOR_Y + RAFT + 0.9, sv * (RD / 2 - 0.15), 0.05, 1.8, 0.05]);
+    for (let v = -RD / 2 + S; v <= RD / 2 - S + 1e-3; v += S) for (const su of [-1, 1]) bars.push([su * (RW / 2 - 0.15), FLOOR_Y + RAFT + 0.9, v, 0.05, 1.8, 0.05]);
+    const rebar = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), FM.rebar, bars.length);
+    bars.forEach(([x, y, z, w, h, d], k) => { fdum.position.set(x, y, z); fdum.rotation.set(0, 0, 0); fdum.scale.set(w, h, d); fdum.updateMatrix(); rebar.setMatrixAt(k, fdum.matrix); });
+    rebar.count = 0;
+    g.add(rebar);
+
+    // 6. Radye beton (160 cm) — aşağıdan yukarı dolar, taze beton parlaklığı zamanla matlaşır
+    const raft = shadow(new THREE.Mesh(new THREE.BoxGeometry(IW - 0.1, RAFT, ID - 0.1).translate(0, RAFT / 2, 0), FM.freshConcrete));
+    raft.position.y = FLOOR_Y + 0.16;
+    g.add(raft);
+
+    // 7. Bodrum perdeleri (40 cm) + kolonlar
+    const wallH = DEPTH - RAFT - 0.16;
+    const walls = shadow(new THREE.Mesh(mergeBoxes([
+      { w: IW - 0.1, h: wallH, d: 0.4, y: wallH / 2, z: ID / 2 - 0.25 }, { w: IW - 0.1, h: wallH, d: 0.4, y: wallH / 2, z: -(ID / 2 - 0.25) },
+      { w: 0.4, h: wallH, d: ID - 0.1, y: wallH / 2, x: IW / 2 - 0.25 }, { w: 0.4, h: wallH, d: ID - 0.1, y: wallH / 2, x: -(IW / 2 - 0.25) },
+      ...[-1, 0, 1].flatMap((i) => [-1, 1].map((k) => ({ w: 0.7, h: wallH, d: 0.7, x: i * 7.2, y: wallH / 2, z: k * 4.6 }))),
+    ]), FM.concrete));
+    walls.position.y = FLOOR_Y + RAFT + 0.16;
+    g.add(walls);
+
+    // Zemin kat döşemesi (kazının tamamını örter)
+    const slabM = shadow(new THREE.Mesh(new THREE.BoxGeometry(PW + 0.2, 1.0, PD + 0.2).translate(0, -0.5, 0), M.whiteStone));
+    g.add(slabM);
+
+    return { blk, mask, pit, shoring, piles, starters, rig, lean, memFloor, memWalls, rebar, raft, walls, slabM, pilePts };
+  });
+
+  // Adım zaman pencereleri (scroll ilerlemesi)
+  const FT = {
+    dig: [0.322, 0.352], piles: [0.352, 0.392], lean: [0.392, 0.404], mem: [0.404, 0.418],
+    rebar: [0.418, 0.446], raft: [0.446, 0.47], walls: [0.47, 0.494], slab: [0.494, 0.514],
+  };
+  const win = (p, [a, b]) => clamp01((p - a) / (b - a));
+
+  // ---- Temel bilgi kartları (3D noktaya bağlı HTML etiketleri) ----
+  const STEPS = [
+    { key: 'dig', t: 'Kazı ve İksa', s: '−6.00 m bodrum kotu · Ø80 sekant kazık perde · 2 sıra öngermeli ankraj', w: 'Kazı çevresindeki zemini ve komşu yapıları güvenle tutar.', a: [-PW / 2 + 0.4, -2.2, PD / 2 - 0.4] },
+    { key: 'piles', t: 'Fore Kazık', s: '40 adet · Ø80 cm · 18 m · C35 beton, donatı kafesli', w: 'Yükü zayıf üst tabakalardan sağlam zemine aktarır, oturmayı önler.', a: [0, FLOOR_Y + 1, 0] },
+    { key: 'lean', t: 'Grobeton', s: '10 cm C16 tesviye betonu', w: 'Donatıyı topraktan ayırır; düz ve temiz çalışma yüzeyi sağlar.', a: [IW * 0.2, FLOOR_Y + 0.1, 0] },
+    { key: 'mem', t: 'Su Yalıtımı', s: 'Çift kat 4 mm bitümlü membran · perdelerde drenaj levhası', w: 'Yeraltı suyunun betona ve donatıya ulaşmasını engeller.', a: [-IW / 2, FLOOR_Y + 2.5, 2] },
+    { key: 'rebar', t: 'Radye Donatısı', s: 'Alt + üst çift kat Ø20/15 · S420 · perde filizleri', w: 'Yükü tüm temele yayar; eğilme ve zımbalamaya karşı direnç verir.', a: [2, FLOOR_Y + RAFT, 2] },
+    { key: 'raft', t: 'Radye Beton', s: '160 cm · C35/45 · kesintisiz pompa dökümü, vibratörlü', w: 'Tek parça monolitik plak; deprem yükünü bütün olarak karşılar.', a: [0, FLOOR_Y + RAFT, 0] },
+    { key: 'walls', t: 'Bodrum Perdeleri', s: '40 cm su geçirimsiz beton · kolonlar · zemin kat döşemesi', w: 'Binayı zemine kenetler; toprak ve deprem itkisini taşır.', a: [IW / 2 - 0.25, -2, ID / 2 - 0.25] },
+  ];
+  const labelLayer = document.createElement('div');
+  labelLayer.className = 'fnd-labels';
+  if (!document.getElementById('fnd-label-css')) {
+    const st = document.createElement('style');
+    st.id = 'fnd-label-css';
+    st.textContent = `
+      .fnd-labels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
+      .fnd-label{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity}
+      .fnd-label i{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#F2C35A;box-shadow:0 0 0 4px rgba(242,195,90,.25),0 0 14px rgba(242,195,90,.8)}
+      .fnd-label span.ln{position:absolute;left:0;bottom:0;width:46px;height:1px;background:rgba(242,195,90,.85);transform-origin:0 0;transform:rotate(-45deg)}
+      .fnd-label .card{position:absolute;left:34px;bottom:30px;width:min(300px,62vw);padding:12px 14px 13px;
+        background:rgba(18,19,21,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+        border:1px solid rgba(242,195,90,.35);border-left:2px solid #F2C35A;color:#fff;font-family:Jost,system-ui,sans-serif}
+      .fnd-label .no{display:block;font-size:10.5px;letter-spacing:.18em;color:#F2C35A;margin-bottom:4px}
+      .fnd-label b{display:block;font-weight:500;font-size:16px;letter-spacing:.02em}
+      .fnd-label em{display:block;font-style:normal;font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.88);margin-top:4px}
+      .fnd-label small{display:block;font-size:12px;line-height:1.45;color:rgba(255,255,255,.62);margin-top:6px}
+      .fnd-label .bar{height:2px;background:rgba(255,255,255,.12);margin-top:9px}
+      .fnd-label .bar>u{display:block;height:100%;width:0;background:#F2C35A}
+      @media (max-width:767px){.fnd-label .card{width:min(230px,58vw);padding:9px 11px}.fnd-label b{font-size:14px}.fnd-label small{display:none}}`;
+    document.head.appendChild(st);
+  }
+  const labels = STEPS.map((stp, i) => {
+    const el = document.createElement('div');
+    el.className = 'fnd-label';
+    el.innerHTML = `<i></i><span class="ln"></span><div class="card"><span class="no">TEMEL · ${String(i + 1).padStart(2, '0')} / ${String(STEPS.length).padStart(2, '0')}</span><b></b><em></em><small></small><div class="bar"><u></u></div></div>`;
+    el.querySelector('b').textContent = stp.t;
+    el.querySelector('em').textContent = stp.s;
+    el.querySelector('small').textContent = stp.w;
+    labelLayer.appendChild(el);
+    const A = BLOCKS[0];
+    return { el, bar: el.querySelector('.bar > u'), pos: new THREE.Vector3(A.x + stp.a[0], stp.a[1], A.z + stp.a[2]), op: 0 };
+  });
+  host.appendChild(labelLayer);
+  let labelOpacity = labels.map(() => 0);
+  const _v = new THREE.Vector3();
+  function updateLabels() {
+    const W = host.clientWidth, Hh = host.clientHeight;
+    labels.forEach((L, i) => {
+      const o = labelOpacity[i];
+      if (o < 0.01) { if (L.op !== 0) { L.el.style.opacity = '0'; L.op = 0; } return; }
+      _v.copy(L.pos).project(camera);
+      const sx = (_v.x * 0.5 + 0.5) * W, sy = (-_v.y * 0.5 + 0.5) * Hh;
+      const cx = Math.min(Math.max(sx, 16), W - 390), cy = Math.min(Math.max(sy, 190), Hh - 16);
+      L.el.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px)`;
+      L.el.style.opacity = String(o);
+      L.op = o;
+    });
+  }
+
+  function applyFoundation(p) {
+    const dig = smooth(win(p, FT.dig));
+    const pileT = win(p, FT.piles);
+    const leanT = smooth(win(p, FT.lean));
+    const memT = smooth(win(p, FT.mem));
+    const rebT = win(p, FT.rebar);
+    const raftT = smooth(win(p, FT.raft));
+    const wallT = smooth(win(p, FT.walls));
+    const slabT = easeOut(win(p, FT.slab));
+    const open = dig > 0.001 && slabT < 0.999;
+
+    for (const F of fnd) {
+      F.mask.visible = open;
+      F.pit.visible = open;
+      F.pit.scale.y = Math.max(0.002, dig);
+      F.shoring.visible = open;
+
+      const n = F.piles.length;
+      const pf = pileT * n;
+      let rigAt = -1;
+      F.piles.forEach((m, k) => {
+        const t = clamp01(pf - k);
+        m.visible = open && t > 0;
+        m.position.y = FLOOR_Y + 0.6 + (1 - easeOut(t)) * (PILE_L - 0.6);
+        if (t > 0 && t < 1) rigAt = k;
+      });
+      F.starters.count = Math.min(n, Math.floor(pf));
+      F.starters.visible = open;
+      F.rig.visible = open && pileT > 0 && pileT < 1;
+      if (F.rig.visible) {
+        const k = rigAt >= 0 ? rigAt : Math.min(n - 1, Math.floor(pf));
+        const [u, v] = F.pilePts[k];
+        F.rig.position.set(u + 0.0, FLOOR_Y, v + 1.4);
+        F.rig.children[3].rotation.y = p * 900;
+      }
+
+      F.lean.visible = open && leanT > 0;
+      F.lean.scale.x = Math.max(0.001, leanT);
+      F.memFloor.visible = open && memT > 0;
+      F.memFloor.scale.z = Math.max(0.001, memT);
+      F.memWalls.visible = open && memT > 0;
+      F.memWalls.scale.y = Math.max(0.001, memT);
+
+      F.rebar.visible = open && rebT > 0;
+      F.rebar.count = Math.floor(rebT * F.rebar.instanceMatrix.count);
+
+      F.raft.visible = open && raftT > 0;
+      F.raft.scale.y = Math.max(0.001, raftT);
+      F.walls.visible = open && wallT > 0;
+      F.walls.scale.y = Math.max(0.001, wallT);
+
+      F.slabM.visible = slabT > 0;
+      F.slabM.position.y = lerp(-1.2, 0, slabT);
+    }
+    FM.freshConcrete.roughness = lerp(0.25, 0.8, smooth(win(p, [0.47, 0.5])));
+    FM.freshConcrete.color.setHex(0x8E8C87).lerp(new THREE.Color(0xA9A69F), smooth(win(p, [0.47, 0.5])));
+
+    // Etiketler: her adım kendi penceresinde görünür
+    STEPS.forEach((stp, i) => {
+      const w = stp.key === 'walls' ? [FT.walls[0], FT.slab[1]] : FT[stp.key];
+      const len = w[1] - w[0];
+      const fade = Math.min(0.006, len * 0.25);
+      const o = smooth((p - w[0] + fade * 0.5) / fade) * (1 - smooth((p - w[1] + fade * 0.5) / fade));
+      labelOpacity[i] = o;
+      labels[i].bar.style.width = (clamp01((p - w[0]) / len) * 100).toFixed(1) + '%';
+    });
+    return slabT;
+  }
+
+  // Eski API ile uyum: zemin kat plağı (bina katlarının oturduğu kot)
   const slab = new THREE.Group();
   for (const blk of BLOCKS) {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(BW + 3.6, 1.5, BD + 3.6).translate(blk.x, -0.75, blk.z), M.whiteStone);
+    const s = new THREE.Mesh(new THREE.BoxGeometry(BW + 3.6, SLAB_TOP, BD + 3.6).translate(blk.x, SLAB_TOP / 2, blk.z), M.whiteStone);
     s.castShadow = s.receiveShadow = !mobile;
     slab.add(s);
   }
   scene.add(slab);
+
 
   const yieldThread = () => new Promise((r) => setTimeout(r, 0));
   await yieldThread();
@@ -754,6 +1124,9 @@ export async function createCity(host, { mobile = false }) {
     const sconce = [];
     const rail = [];
     const metal = [];
+    const shopGlass = [];
+    const shopCeil = [];
+    const shopFloor = [];
     const cad = [];
     const gh = FH - 0.38;
 
@@ -764,10 +1137,52 @@ export async function createCity(host, { mobile = false }) {
       white.push({ w: pw + 0.4, h: 0.24, d: pd + 0.4, y: 0.12 });
       cad.push({ w: pw + 0.6, h: FH, d: pd + 0.6, y: FH / 2 });
 
-      // İçerideki mağaza/kafe vitrin hacmi
+      // Gerçek iç hacimli dükkan/kafe vitrinleri:
+      //  - cam, cephe kolonlarının 45 cm gerisinde, yarı saydam ve gökyüzünü yansıtır
+      //  - camın 3.2 m arkasında aydınlatılmış arka duvar (kamera döndükçe gerçek derinlik/paralaks)
+      //  - ışıklı tavan, cilalı zemin, sarkıt lambalar ve tezgâhlar 3D
+      const GIN = 0.45, DIN = 3.2;
+      const yb = 0.24, ih = gh - yb;
+      const isUpper = kind === 'podium1';
       shop.push({
-        w: pw - 0.7, h: gh - 0.2, d: pd - 0.7, y: 0.2 + (gh - 0.2) / 2,
-        uvScaleX: 2, uvScaleY: 1, uvOffX: kind === 'podium1' ? 0.25 : 0, uvOffY: 0,
+        w: pw - DIN * 2, h: ih, d: pd - DIN * 2, y: yb + ih / 2,
+        uvScaleX: 0.5, uvScaleY: 1, uvOffX: isUpper ? 0.5 : 0, uvOffY: 0,
+      });
+      shopCeil.push({ w: pw - GIN * 2, h: 0.06, d: pd - GIN * 2, y: gh - 0.03, uvScaleX: (pw - GIN * 2) / 2.4, uvScaleY: (pd - GIN * 2) / 2.4 });
+      shopFloor.push({ w: pw - GIN * 2, h: 0.04, d: pd - GIN * 2, y: yb + 0.02 });
+
+      const faces = [
+        { axis: 'z', len: pw, half: pd / 2 },
+        { axis: 'x', len: pd, half: pw / 2 },
+      ];
+      faces.forEach((fc, fIdx) => {
+        for (const sg of [-1, 1]) {
+          const P = (list, u, w, y, h, depth, inset) => {
+            const n = sg * (fc.half - inset);
+            if (fc.axis === 'z') list.push({ w, h, d: depth, x: u, y, z: n });
+            else list.push({ w: depth, h, d: w, x: n, y, z: u });
+          };
+          const L = fc.len - GIN * 2;
+          // Cam
+          P(shopGlass, 0, L, yb + ih / 2, ih, 0.03, GIN);
+          // Doğramalar: her 1.9 m'de dikey kayıt, 2.55 m'de yatay kayıt, altta süpürgelik
+          const nM = Math.round(L / 1.9);
+          for (let m = 0; m <= nM; m++) P(metal, -L / 2 + (m * L) / nM, 0.07, yb + ih / 2, ih, 0.12, GIN);
+          P(metal, 0, L, yb + 2.4, 0.07, 0.12, GIN);
+          P(metal, 0, L, yb + 0.1, 0.2, 0.12, GIN);
+          // Sarkıt lambalar (camın 1.4 m gerisinde) + askı kabloları
+          for (let u = -L / 2 + 1.4; u <= L / 2 - 1.4; u += 2.1) {
+            P(sconce, u, 0.34, gh - 0.95, 0.22, 0.34, GIN + 1.4);
+            P(metal, u, 0.02, gh - 0.42, 0.84, 0.02, GIN + 1.4);
+          }
+          // Tezgâh / vitrin dolapları (kafede tezgâh, butikte teşhir masası)
+          const seed = (fIdx * 2 + (sg > 0 ? 1 : 0) + (isUpper ? 3 : 0));
+          for (let q = 0; q < 2; q++) {
+            const u = (-0.25 + q * 0.5) * L + ((seed * 1.7) % 2 - 1);
+            P(wood, u, 2.6, yb + 0.5, 1.0, 0.8, GIN + 2.2);
+            P(white, u, 2.7, yb + 1.03, 0.06, 0.86, GIN + 2.2);
+          }
+        }
       });
 
       // Beyaz taş podyum kolonları ve vitrin bölmeleri
@@ -911,6 +1326,9 @@ export async function createCity(host, { mobile = false }) {
       sconce: sconce.length ? mergeBoxes(sconce) : null,
       rail: rail.length ? mergeBoxes(rail) : null,
       metal: metal.length ? mergeBoxes(metal) : null,
+      shopGlass: shopGlass.length ? mergeBoxes(shopGlass) : null,
+      shopCeil: shopCeil.length ? mergeBoxes(shopCeil) : null,
+      shopFloor: shopFloor.length ? mergeBoxes(shopFloor) : null,
       cadBoxes: cad,
     };
   }
@@ -932,48 +1350,74 @@ export async function createCity(host, { mobile = false }) {
 
   await yieldThread();
 
-  // ---- Çatı Alınlığı (Cornice) Parlak Altın "FETSAN GRUP" Yazısı ----
-  // MeshBasicMaterial kullanılarak güneş açısından bağımsız her zaman net, parlak altın görünüm sağlanır
+  // ---- Çatı Alınlığı: Gerçek 3D Kanal Harf "FETSAN GRUP" Tabelası ----
+  // Gerçek cephe tabelası gibi: alınlıktan 18 cm aralıklı (stand-off) monte edilmiş, yanları fırçalanmış altın
+  // metal, ön yüzü LED ile aydınlatılmış opal akrilik; arkasından taş alınlığa yumuşak ışık halesi vurur.
+  // Derinlik, harf maskesinden üretilen ince dilimlerin üst üste dizilmesiyle (slice extrusion) elde edilir.
+  try { await Promise.race([document.fonts.load('500 160px "Jost"'), new Promise((r) => setTimeout(r, 1200))]); } catch (e) { /* yedek font */ }
+  const SIGN_TEXT = 'FETSAN GRUP';
   const signTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = 1024; c.height = 192;
-    const x = c.getContext('2d');
-    x.clearRect(0, 0, 1024, 192);
-
-    // Koyu bronz gölge konturu + parlak altın harfler (beyaz taş alınlık üzerinde yüksek kontrast)
-    x.lineJoin = 'round';
-    x.font = '800 112px "Jost", "Segoe UI", sans-serif';
-    x.textAlign = 'center';
-    x.textBaseline = 'middle';
-
-    // Arka sıcak altın hale
-    x.shadowColor = 'rgba(255, 168, 24, 0.95)';
-    x.shadowBlur = 22;
-    x.fillStyle = '#3A2608';
-    x.strokeStyle = '#4A2E08'; x.lineWidth = 10; x.strokeText('FETSAN GRUP', 512, 98);
-    x.fillText('FETSAN GRUP', 515, 102);
-
-    const g = x.createLinearGradient(0, 28, 0, 164);
-    g.addColorStop(0.0, '#FFF8C8');
-    g.addColorStop(0.45, '#FFD046');
-    g.addColorStop(1.0, '#D49212');
-    x.fillStyle = g;
-    x.fillText('FETSAN GRUP', 512, 98);
-
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = maxAniso;
-    return t;
+    const W = 2048, Hc = 320;
+    const font = '500 190px "Jost", "Segoe UI", sans-serif';
+    const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = Hc; const x = c.getContext('2d'); x.font = font; x.textAlign = 'center'; x.textBaseline = 'alphabetic'; if ('letterSpacing' in x) x.letterSpacing = '26px'; return [c, x]; };
+    const BASE = 236; // taban çizgisi
+    const [cm, xm] = mk();
+    xm.fillStyle = '#fff'; xm.fillText(SIGN_TEXT, W / 2, BASE);
+    // Ön yüz: sıcak opal akrilik — merkez daha parlak, kenarda ince altın trim kapak
+    const [cf, xf] = mk();
+    const g = xf.createLinearGradient(0, BASE - 140, 0, BASE);
+    g.addColorStop(0, '#FFE9A8'); g.addColorStop(0.5, '#F2B84A'); g.addColorStop(1, '#C98422');
+    xf.fillStyle = g; xf.fillText(SIGN_TEXT, W / 2, BASE);
+    xf.lineWidth = 7; xf.strokeStyle = '#8A5A16'; xf.strokeText(SIGN_TEXT, W / 2, BASE);
+    xf.lineWidth = 2; xf.strokeStyle = 'rgba(255,226,150,0.85)'; xf.strokeText(SIGN_TEXT, W / 2, BASE);
+    // Hale: harf arkasından taşa vuran yumuşak sıcak ışık
+    const [ch, xh] = mk();
+    if ('filter' in xh) xh.filter = 'blur(22px)';
+    xh.fillStyle = 'rgba(255, 186, 92, 1)'; xh.fillText(SIGN_TEXT, W / 2, BASE);
+    if ('filter' in xh) xh.filter = 'blur(6px)';
+    xh.fillStyle = 'rgba(255, 210, 140, 0.8)'; xh.fillText(SIGN_TEXT, W / 2, BASE);
+    const tex = (c, srgb) => {
+      const t = new THREE.CanvasTexture(c);
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = maxAniso;
+      return t;
+    };
+    return { mask: tex(cm, false), face: tex(cf, true), halo: tex(ch, true), aspect: W / Hc };
   })();
 
-  const logoMat = new THREE.MeshBasicMaterial({
-    map: signTex, transparent: true, alphaTest: 0.03, depthWrite: false,
-    color: new THREE.Color(1.9, 1.65, 1.3), // HDR altın → bloom ile alınlığa sıcak hale yayar
-  });
+  const signMats = {
+    face: new THREE.MeshBasicMaterial({ map: signTex.face, alphaTest: 0.5, color: new THREE.Color(1.45, 1.2, 0.85) }),
+    side: new THREE.MeshStandardMaterial({ color: 0x9A6A22, metalness: 0.92, roughness: 0.32, alphaMap: signTex.mask, alphaTest: 0.5, side: THREE.DoubleSide }),
+    back: new THREE.MeshStandardMaterial({ color: 0x5A4220, metalness: 0.6, roughness: 0.5, alphaMap: signTex.mask, alphaTest: 0.5 }),
+    halo: new THREE.MeshBasicMaterial({ map: signTex.halo, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(0.95, 0.62, 0.3), toneMapped: false }),
+  };
 
-  function createGoldChannelSign(w, h) {
-    return new THREE.Mesh(new THREE.PlaneGeometry(w, h), logoMat);
+  // capH: büyük harf yüksekliği (m). Grup orijini alınlık yüzeyinde, +Z dışarı bakar.
+  function createGoldChannelSign(capH) {
+    const h = capH * (320 / 136);           // 190px font → ~136px büyük harf
+    const w = h * signTex.aspect;
+    const grp = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(w, h);
+    const halo = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.02, h * 0.95), signMats.halo);
+    halo.position.z = 0.015;
+    grp.add(halo);
+    const STAND = 0.06, DEPTHL = 0.16, SLICES = mobile ? 4 : 9;
+    const back = new THREE.Mesh(geo, signMats.back);
+    back.position.z = STAND;
+    grp.add(back);
+    for (let i = 1; i < SLICES; i++) {
+      const s = new THREE.Mesh(geo, signMats.side);
+      s.position.z = STAND + (DEPTHL * i) / SLICES;
+      grp.add(s);
+    }
+    const face = new THREE.Mesh(geo, signMats.face);
+    face.position.z = STAND + DEPTHL + 0.004;
+    grp.add(face);
+    // Harfin altı (bulunduğu yer) biraz yukarıda: yazının optik merkezi alınlık ortasına gelsin
+    grp.children.forEach((m) => { m.position.y = h * 0.025; });
+    return grp;
   }
+
 
   // ---- İkiz Blokların (A ve B) İnşası ----
   const tower = new THREE.Group();
@@ -1004,6 +1448,9 @@ export async function createCity(host, { mobile = false }) {
       if (tpl.sconce) parts.push(new THREE.Mesh(tpl.sconce, M.sconce));
       if (tpl.rail) parts.push(new THREE.Mesh(tpl.rail, M.railing));
       if (tpl.metal) parts.push(new THREE.Mesh(tpl.metal, M.darkMetal));
+      if (tpl.shopCeil) parts.push(new THREE.Mesh(tpl.shopCeil, M.shopCeil));
+      if (tpl.shopFloor) parts.push(new THREE.Mesh(tpl.shopFloor, M.shopFloor));
+      if (tpl.shopGlass) { const gm = new THREE.Mesh(tpl.shopGlass, M.shopGlass); gm.renderOrder = 2; parts.push(gm); }
 
       for (const m of parts) {
         m.castShadow = !mobile && (m.material === M.whiteStone || m.material === M.greyStone);
@@ -1030,11 +1477,11 @@ export async function createCity(host, { mobile = false }) {
 
     // Çatı alınlığına (cornice) her iki cephede (Z+ sağ ön ve X- sol yan) parlak altın FETSAN GRUP imzası
     const corniceY = blk.y + SLAB_TOP + (N - 1) * FH + FH + 0.58;
-    const sFront = createGoldChannelSign(14.5, 2.7);
-    sFront.position.set(blk.x, corniceY, blk.z + BD / 2 + 0.94);
-    const sSide = createGoldChannelSign(13.0, 2.45);
+    const sFront = createGoldChannelSign(0.82);
+    sFront.position.set(blk.x, corniceY, blk.z + BD / 2 + 0.905);
+    const sSide = createGoldChannelSign(0.82);
     sSide.rotation.y = -Math.PI / 2;
-    sSide.position.set(blk.x - BW / 2 - 0.94, corniceY, blk.z);
+    sSide.position.set(blk.x - BW / 2 - 0.905, corniceY, blk.z);
     signs.add(sFront, sSide);
   });
   signs.visible = false;
@@ -1089,8 +1536,8 @@ export async function createCity(host, { mobile = false }) {
   const siteTreeCoords = [
     [22, 16, 1.05], [24, 6, 1.15], [23, -6, 1.0], [21, -16, 0.95],
     [-36, 10, 1.0], [-37, -2, 1.1], [-35, -14, 0.95], [-34, -24, 1.05],
-    [18, 19, 0.82], [-30, 18, 0.85], [26, 24, 0.9],
-    [-6, -27, 1.0], [8, -26, 0.95], [-20, -28, 1.05],
+    [23, 22, 0.82], [-30, 18, 0.85], [26, 26, 0.9],
+    [-4, -31, 1.0], [8, -26, 0.95], [-20, -28, 1.05],
   ];
   for (const st of siteTreeCoords) trees.push(st);
   // Final kamera ile A blok arasındaki görüş koridorunu ağaçlardan temizle (cephe ve vitrinler kapanmasın)
@@ -1171,8 +1618,11 @@ export async function createCity(host, { mobile = false }) {
     [0.12, 58, 20, 2],
     [0.22, 68, 27, H * 0.46],
     [0.32, 70, 28, H * 0.48],
-    [0.40, 56, 12, 4],
-    [0.44, 54, 10, 6],
+    [0.35, 58, 31, -2],   // Temel: kazı çukuruna yukarıdan bakış
+    [0.42, 50, 27, -3],
+    [0.47, 52, 22, -2],
+    [0.51, 54, 12, 4],
+    [0.52, 54, 10, 6],
   ];
   // Final: kamera sokak göz hizasına iner; dikey çizgiler shift-lens ile paralel tutulur (bkz. tick)
   const finalKeys = [
@@ -1199,11 +1649,11 @@ export async function createCity(host, { mobile = false }) {
 
   function cameraTarget(p, built) {
     let r, y, ly;
-    if (p < 0.44) {
+    if (p < BUILD0) {
       [r, y, ly] = sample(keys, p);
     } else if (p < 0.86) {
       const h = SLAB_TOP + built * FH;
-      const t = (p - 0.44) / 0.42;
+      const t = (p - BUILD0) / (0.86 - BUILD0);
       r = lerp(54, 62, t);
       y = lerp(10, 13.5, t) + (1 - t) * h * 0.22;
       ly = Math.max(6, h * 0.48);
@@ -1239,23 +1689,20 @@ export async function createCity(host, { mobile = false }) {
     // 2. 360° Çizim (Tel kafes)
     const wireT = smooth((p - 0.14) / 0.16);
     wireGeo.setDrawRange(0, Math.floor(wireT * wireTotal / 2) * 2);
-    M.blueprint.opacity = 0.72 * (1 - smooth((p - 0.74) / 0.12));
+    // Temel fazında çizim soluklaşır, kazı ve donatı net okunur
+    const fndDim = smooth((p - 0.33) / 0.03) * (1 - smooth((p - 0.5) / 0.04));
+    M.blueprint.opacity = 0.72 * (1 - 0.72 * fndDim) * (1 - smooth((p - 0.74) / 0.12));
     wire.visible = wireT > 0 && M.blueprint.opacity > 0.01;
 
     // 3. Temel
-    const pileT = (p - 0.32) / 0.06;
-    piles.children.forEach((pl, i) => {
-      const t = easeOut(pileT * 2 - (i % 5) * 0.12);
-      pl.scale.y = Math.max(0.001, t);
-      pl.visible = t > 0.001;
-    });
-    const slabT = easeOut((p - 0.37) / 0.06);
-    slab.position.y = lerp(-1.6, SLAB_TOP, slabT);
-    slab.visible = slabT > 0.001;
+    const slabT = applyFoundation(p);
+    const plinthT = easeOut(win(p, [0.508, 0.52]));
+    slab.scale.y = Math.max(0.001, plinthT);
+    slab.visible = plinthT > 0.001;
     gardenWallGroup.visible = slabT > 0.5;
 
     // 4. Yapı (Her iki blokta kat kat yükselir)
-    const b = clamp01((p - 0.44) / 0.4) * (N + 0.6);
+    const b = clamp01((p - BUILD0) / BUILD_SPAN) * (N + 0.6);
     for (let i = 0; i < N; i++) {
       const t = clamp01(b - i);
       const vis = t > 0.001;
@@ -1274,7 +1721,8 @@ export async function createCity(host, { mobile = false }) {
     const glow = smooth((p - 0.80) / 0.14);
     signLight.intensity = mobile ? 0 : glow * 150;
     M.window.emissiveIntensity = 0.85 + glow * 0.45;
-    M.shopWindow.emissiveIntensity = 1.30 + glow * 0.60;
+    M.shopWindow.emissiveIntensity = 1.15 + glow * 0.4;
+    M.shopCeil.emissiveIntensity = 1.3 + glow * 0.5;
     cityMat.emissiveIntensity = 0.12 + glow * 0.32;
     sun.intensity = lerp(2.35, 2.75, glow);
     hemi.intensity = lerp(0.85, 1.02, glow);
@@ -1308,7 +1756,7 @@ export async function createCity(host, { mobile = false }) {
 
   function tick() {
     raf = requestAnimationFrame(tick);
-    const tgt = cameraTarget(progress, Math.min(N, clamp01((progress - 0.44) / 0.4) * (N + 0.6)));
+    const tgt = cameraTarget(progress, Math.min(N, clamp01((progress - BUILD0) / BUILD_SPAN) * (N + 0.6)));
     const k = 0.16;
     const dx = tgt.x - cur.x, dy = tgt.y - cur.y, dz = tgt.z - cur.z, dl = tgt.ly - cur.ly, dw = tgt.w - cur.w;
     cur.x += dx * k; cur.y += dy * k; cur.z += dz * k; cur.ly += dl * k; cur.w += dw * k;
@@ -1343,6 +1791,7 @@ export async function createCity(host, { mobile = false }) {
     camera.lookAt(FOCUS_X, lookY, FOCUS_Z);
     if (bloom) bloom.render(scene, camera);
     else renderer.render(scene, camera);
+    updateLabels();
     dirty = false;
   }
 
@@ -1375,6 +1824,7 @@ export async function createCity(host, { mobile = false }) {
     },
     destroy() {
       cancelAnimationFrame(raf); io.disconnect(); ro.disconnect();
+      labelLayer.remove();
       if (bloom) bloom.dispose();
       renderer.dispose(); pmrem.dispose(); envRT.dispose(); skyTex.dispose();
       host.removeChild(renderer.domElement);
