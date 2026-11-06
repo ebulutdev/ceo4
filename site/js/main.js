@@ -53,21 +53,33 @@
   // silinir ve kaydırma konumu aynı miktarda düzeltilir — ekranda zıplama olmaz, yukarı çıkarken
   // sahne tek ekran boyunda akıp geçer. Sayfa yenilenince tüm sahneler baştan oynar.
   const collapseQ = new Set();
+  // Katlama sırasında sayfa önce kısalır, sonra kaydırma konumu düzeltilir. Bu ara anda sonraki sahneler
+  // kendini yanlışlıkla 'geçilmiş' sanmasın diye tüm sahne olayları yok sayılır (zincirleme atlama hatası).
+  let collapsing = false;
+  const sceneChecks = []; // katlamadan sonra 'sonu geçilmiş ama bitmemiş' sahneleri tamamlar
   function queueCollapse(st) { collapseQ.add(st); }
   function runCollapse() {
-    if (!collapseQ.size) return;
+    if (collapsing || !collapseQ.size) return;
     const list = [...collapseQ].filter((st) => st.progress >= 1);
     if (!list.length) return;
+    collapsing = true;
+    const y0 = lenis ? lenis.scroll : scrollY;
     let removed = 0;
     for (const st of list) {
       collapseQ.delete(st);
       removed += Math.max(0, st.end - st.start);
       st.kill(true);
     }
-    const y = Math.max(0, (lenis ? lenis.scroll : scrollY) - removed);
+    const y = Math.max(0, y0 - removed);
     if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
-    else scrollTo(0, y);
+    scrollTo(0, y);
     ScrollTrigger.refresh();
+    // Konum düzeltildikten sonra sahneler doğru ilerleme değerleriyle yeniden olay almaya başlar
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      collapsing = false;
+      ScrollTrigger.update();
+      sceneChecks.forEach((fn) => fn());
+    }));
   }
 
   function fwd(anim, vars) {
@@ -79,10 +91,11 @@
       if (!lag) anim.progress(p);
       else gsap.to(anim, { progress: p, duration: lag, ease: 'power1.out', overwrite: true });
     };
-    return ScrollTrigger.create({
+    const st = ScrollTrigger.create({
       ...rest,
-      onUpdate(self) { if (!done) go(self.progress); if (rest.onUpdate) rest.onUpdate(self); },
+      onUpdate(self) { if (!done && !collapsing) go(self.progress); if (rest.onUpdate) rest.onUpdate(self); },
       onLeave(self) {
+        if (collapsing) return;
         if (!done) { done = true; go(1); if (self.pin) queueCollapse(self); }
         if (rest.onLeave) rest.onLeave(self);
       },
@@ -91,6 +104,11 @@
         if (rest.onRefresh) rest.onRefresh(self);
       },
     });
+    sceneChecks.push(() => {
+      if (done || !st.isActive && st.progress < 1) return;
+      if (st.progress >= 1) { done = true; go(1); if (st.pin) queueCollapse(st); }
+    });
+    return st;
   }
 
   // ---------- Lenis ----------
@@ -613,14 +631,15 @@
     }
 
     let cityDone = false;
-    ScrollTrigger.create({
+    const citySt = ScrollTrigger.create({
       trigger: sec, start: 'top top',
       end: () => (isDesk() ? '+=360%' : '+=290%'),
       pin: '.city__pin', pinSpacing: true,
       invalidateOnRefresh: true,
-      onUpdate: (self) => { if (!cityDone) update(self.progress); },
-      onLeave: (self) => { if (!cityDone) { cityDone = true; update(1); queueCollapse(self); } }, // tamamlanınca kilitlenir ve katlanır
+      onUpdate: (self) => { if (!cityDone && !collapsing) update(self.progress); },
+      onLeave: (self) => { if (!cityDone && !collapsing) { cityDone = true; update(1); queueCollapse(self); } }, // tamamlanınca kilitlenir ve katlanır
     });
+    sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) { cityDone = true; update(1); queueCollapse(citySt); } });
 
     const gl = (() => { try { const c = d.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
     if (!gl) { sec.classList.add('is-fallback'); return; }
