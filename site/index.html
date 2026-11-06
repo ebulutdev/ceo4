@@ -35,7 +35,21 @@
   <link rel="preload" as="image" type="image/webp" media="(max-width: 767px)" href="assets/film/m/005.webp">
   <link rel="preload" as="image" type="image/webp" media="(min-width: 768px)" href="assets/film/d/007.webp">
 
-  <script>document.documentElement.classList.add('js')</script>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <script>
+    // Sayfa her açılışta/yenilemede en baştan başlar: tarayıcının kaydırma hafızası ve #bağlantı kapatılır,
+    // geri/ileri önbelleğinden (bfcache) dönülürse sayfa yeniden yüklenir.
+    document.documentElement.classList.add('js');
+    (function () {
+      try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) {}
+      if (location.hash) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+      window.scrollTo(0, 0);
+      addEventListener('beforeunload', function () { window.scrollTo(0, 0); });
+      addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+    })();
+  </script>
   <script type="importmap">{ "imports": { "three": "./assets/vendor/three/three.module.min.js" } }</script>
   <link rel="stylesheet" href="css/style.css?v=81354a74">
 
