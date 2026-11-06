@@ -1,10 +1,9 @@
-// FETSAN Grup imza gökdeleni — Three.js sahnesi.
+// FETSAN Grup — Defne Evleri İkiz Blok Mimari 3D Sahnesi.
 // Scroll ilerlemesi (0–1) dışarıdan setProgress ile verilir:
-// arazi → mimari çizim → temel → kat kat yapı → tabela ve son kamera turu.
+// arazi → 360° mimari teknik çizim (CAD) → temel → kat kat yapı → canlı gün batımı ve altın FETSAN GRUP imzası.
 import * as THREE from 'three';
-import { RoomEnvironment } from '../assets/vendor/three/RoomEnvironment.js';
 
-const FH = 3.6;            // kat yüksekliği
+const FH = 3.5;            // kat yüksekliği (11 kat ≈ 38.5 m)
 const SLAB_TOP = 0.8;      // temel plağı üst kotu
 
 // Faz sınırları (main.js ile aynı)
@@ -15,11 +14,30 @@ const smooth = (v) => { v = clamp01(v); return v * v * (3 - 2 * v); };
 const easeOut = (v) => 1 - Math.pow(1 - clamp01(v), 3);
 const lerp = (a, b, t) => a + (b - a) * t;
 
-// Basit kutu birleştirici: [{w,h,d,x,y,z}] → tek BufferGeometry (tek draw call)
+// Basit kutu birleştirici: [{w,h,d,x,y,z,uvOffX,uvOffY,uvScaleX,uvScaleY}] → tek BufferGeometry (tek draw call)
 function mergeBoxes(list) {
+  if (!list.length) return new THREE.BufferGeometry();
   const parts = list.map((b) => {
     const g = new THREE.BoxGeometry(b.w, b.h, b.d).toNonIndexed();
     g.translate(b.x || 0, b.y || 0, b.z || 0);
+    if (b.wuv) {
+      // Dünya ölçekli UV: taş derzleri her kutuda aynı gerçek ölçüde kalır (sünme yok)
+      const P = g.attributes.position, Nn = g.attributes.normal, U = g.attributes.uv;
+      for (let i = 0; i < P.count; i++) {
+        const nx = Math.abs(Nn.getX(i)), ny = Math.abs(Nn.getY(i));
+        const px = P.getX(i), py = P.getY(i), pz = P.getZ(i);
+        if (ny > 0.5) U.setXY(i, px * b.wuv, pz * b.wuv);
+        else if (nx > 0.5) U.setXY(i, pz * b.wuv, py * b.wuv);
+        else U.setXY(i, px * b.wuv, py * b.wuv);
+      }
+    } else if (b.uvScaleX || b.uvScaleY || b.uvOffX || b.uvOffY) {
+      const uvAttr = g.attributes.uv;
+      const sx = b.uvScaleX ?? 1, sy = b.uvScaleY ?? 1;
+      const ox = b.uvOffX ?? 0, oy = b.uvOffY ?? 0;
+      for (let i = 0; i < uvAttr.count; i++) {
+        uvAttr.setXY(i, uvAttr.getX(i) * sx + ox, uvAttr.getY(i) * sy + oy);
+      }
+    }
     return g;
   });
   const count = parts.reduce((n, g) => n + g.attributes.position.count, 0);
@@ -41,40 +59,144 @@ function mergeBoxes(list) {
   return out;
 }
 
-function skyTexture() {
-  const c = document.createElement('canvas');
-  c.width = 4; c.height = 512;
-  const x = c.getContext('2d');
-  const g = x.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, '#141516');
-  g.addColorStop(0.45, '#3a3b3d');
-  g.addColorStop(0.72, '#7d7a74');
-  g.addColorStop(0.82, '#a8a399');
-  g.addColorStop(1, '#55565a');
-  x.fillStyle = g; x.fillRect(0, 0, 4, 512);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+// Geometrileri birleştirici (çok parçalı ağaç taçları için)
+function mergeGeos(geos) {
+  const indexed = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  const count = indexed.reduce((n, g) => n + g.attributes.position.count, 0);
+  const pos = new Float32Array(count * 3);
+  const nor = new Float32Array(count * 3);
+  let o = 0;
+  for (const g of indexed) {
+    pos.set(g.attributes.position.array, o * 3);
+    nor.set(g.attributes.normal.array, o * 3);
+    o += g.attributes.position.count;
+    g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  return out;
 }
 
-// Zemin: 64 m'lik kent ızgarası (50 m ada + 14 m yol). Karo köşesi = ada merkezi.
-const GRID = 64;
-function streetTexture() {
+// Gün batımı gökyüzü — 2:1 equirect (ufuk tam ortada), dikişsiz FBM bulutları.
+// Aynı doku hem arka plan hem PMREM ortam yansıması (camlar bu gökyüzünü yansıtır) olarak kullanılır.
+function skyTexture(mobile, sunDir) {
+  const W = mobile ? 512 : 1024, HH = W / 2, HOR = HH / 2;
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  c.width = W; c.height = HH;
   const x = c.getContext('2d');
-  const px = 256 / GRID;            // 4 px = 1 m
-  const road = 14 * px, walk = 2.5 * px, mid = 128;
-  x.fillStyle = '#343537'; x.fillRect(0, 0, 256, 256);          // ada yüzeyi
-  x.fillStyle = '#3f4042';                                          // kaldırım
-  x.fillRect(0, mid - road / 2 - walk, 256, road + walk * 2);
-  x.fillRect(mid - road / 2 - walk, 0, road + walk * 2, 256);
-  x.fillStyle = '#242527';                                          // asfalt
-  x.fillRect(0, mid - road / 2, 256, road);
-  x.fillRect(mid - road / 2, 0, road, 256);
-  x.fillStyle = 'rgba(217, 215, 210, .28)';                         // şerit
-  for (let k = 0; k < 256; k += 16) {
-    if (Math.abs(k + 4 - mid) > road / 2 + 4) { x.fillRect(k, mid - 0.5, 8, 1); x.fillRect(mid - 0.5, k, 1, 8); }
+  const img = x.createImageData(W, HH);
+  const d = img.data;
+
+  const hash = (i, j) => {
+    let h = (i * 374761393 + j * 668265263) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+  };
+  // Yatayda periyodik değer gürültüsü (equirect kenarında dikiş olmaz)
+  const noise = (px, py, per) => {
+    const xi = Math.floor(px), yi = Math.floor(py);
+    const xf = px - xi, yf = py - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const x0 = ((xi % per) + per) % per, x1 = (x0 + 1) % per;
+    const a = hash(x0, yi), b = hash(x1, yi), e = hash(x0, yi + 1), f = hash(x1, yi + 1);
+    return a + (b - a) * u + (e - a) * v + (a - b - e + f) * u * v;
+  };
+  const fbm = (px, py) => {
+    let s = 0, amp = 0.5, fr = 1;
+    for (let o = 0; o < 5; o++) { s += amp * noise(px * fr, py * fr, 7 * fr); fr *= 2; amp *= 0.5; }
+    return s;
+  };
+  const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const ramp = (stops, t) => {
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [ta, ca] = stops[i], [tb, cb] = stops[i + 1];
+      if (t <= tb) return mix(ca, cb, (t - ta) / (tb - ta));
+    }
+    return stops[stops.length - 1][1];
+  };
+  // e: 0 = ufuk, 1 = zenit
+  const skyStops = [
+    [0.00, hex('#FFD48E')], [0.05, hex('#F9A75A')], [0.14, hex('#E07852')],
+    [0.30, hex('#C0645E')], [0.55, hex('#6A5478')], [1.00, hex('#232B48')],
+  ];
+  const litStops = [
+    [0.00, hex('#FFE4A2')], [0.10, hex('#FFB65E')], [0.30, hex('#F79258')],
+    [0.55, hex('#D97C70')], [1.00, hex('#8A6A8A')],
+  ];
+  const shadowCol = hex('#4A3A58');
+  const sunU = Math.atan2(sunDir.z, sunDir.x) / (Math.PI * 2) + 0.5;
+
+  for (let row = 0; row < HH; row++) {
+    for (let col = 0; col < W; col++) {
+      const k = (row * W + col) * 4;
+      let rgb;
+      if (row < HOR) {
+        const e = 1 - row / HOR;
+        const u = col / W;
+        let du = Math.abs(u - sunU); du = Math.min(du, 1 - du);
+        const sunG = Math.exp(-(du * du) / 0.018) * Math.exp(-e * 7);
+        rgb = ramp(skyStops, e);
+        rgb = mix(rgb, hex('#FFE6AE'), sunG * 0.45);
+
+        // Bulutlar: yatayda uzamış, ufka yakın katmanlarda yoğun
+        const nx = u * 7, ny = (1 - e) * 9;
+        const n = fbm(nx, ny * 1.6);
+        const band = Math.min(1, e / 0.04) * Math.max(0, 1 - e / 0.72);
+        let dens = Math.max(0, Math.min(1, (n - 0.43) / 0.2)) * band;
+        if (dens > 0.002) {
+          const nUp = fbm(nx, ny * 1.6 - 0.35);
+          const lit = Math.max(0, Math.min(1, 0.55 + (n - nUp) * 3.2 + sunG * 0.6));
+          const cc = mix(shadowCol, ramp(litStops, e), lit);
+          rgb = mix(rgb, cc, dens * 0.92);
+        }
+      } else {
+        // Ufkun altı: koyu sıcak zemin (camlara aşağıdan parlak sarı yansımasın)
+        const t = (row - HOR) / HOR;
+        rgb = mix(hex('#A86A4E'), hex('#1E1A1C'), Math.min(1, t * 3.5));
+      }
+      d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  return tex;
+}
+
+// Gri doğal taş / bazalt cephe kaplaması — 1 doku tekrarı = 2.4 m (dünya ölçekli UV ile kullanılır)
+function slateStoneTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const x = c.getContext('2d');
+  let s = 11;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  x.fillStyle = '#7E8288';
+  x.fillRect(0, 0, 256, 256);
+  // Plak bazlı ton farkı (4 sıra x 2 plak, şaşırtmalı)
+  for (let row = 0; row < 4; row++) {
+    for (let k = -1; k < 2; k++) {
+      const x0 = k * 128 + (row % 2) * 64;
+      const v = Math.floor(108 + r() * 34);
+      x.fillStyle = `rgb(${v}, ${v + 3}, ${v + 8})`;
+      x.fillRect(x0 + 1, row * 64 + 1, 126, 62);
+    }
+  }
+  for (let i = 0; i < 3200; i++) {
+    x.fillStyle = r() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(10,12,16,0.07)';
+    x.fillRect(Math.floor(r() * 256), Math.floor(r() * 256), 2, 2);
+  }
+  x.strokeStyle = 'rgba(28, 30, 34, 0.55)';
+  x.lineWidth = 2;
+  for (let row = 0; row < 4; row++) {
+    const y = row * 64;
+    x.beginPath(); x.moveTo(0, y); x.lineTo(256, y); x.stroke();
+    for (let k = 0; k < 2; k++) {
+      const xPos = ((k * 128) + (row % 2) * 64) % 256;
+      x.beginPath(); x.moveTo(xPos, y); x.lineTo(xPos, y + 64); x.stroke();
+    }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -82,17 +204,230 @@ function streetTexture() {
   return t;
 }
 
+// 4x4 oda atlası — üç ayrı harita üretir:
+//  map      : ışığı açık odada oda içi, kapalı odada yansıtıcı cam tonu
+//  emissive : yalnız ışığı açık odalar parlar (kapalı odalar siyah → cam gökyüzünü yansıtır)
+//  mr       : G = pürüzlülük, B = metaliklik (kapalı oda camı ayna gibi, açık oda camı şeffaf hissi)
+function defneRoomAtlas() {
+  const S = 1024, N_CELL = 4, cw = S / N_CELL;
+  const mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; return c; };
+  const cMap = mk(), cEm = mk(), cMr = mk();
+  const xm = cMap.getContext('2d'), xe = cEm.getContext('2d'), xr = cMr.getContext('2d');
+  xm.fillStyle = '#121418'; xm.fillRect(0, 0, S, S);
+  xe.fillStyle = '#000'; xe.fillRect(0, 0, S, S);
+  xr.fillStyle = 'rgb(0, 90, 210)'; xr.fillRect(0, 0, S, S);
+
+  // b = ışık şiddeti; off = ışık kapalı (yaklaşık %35 oda)
+  const profiles = [
+    { b: 1.00, curtain: 0.36 }, { off: true }, { b: 0.92, curtain: 0.42 }, { b: 0.55, curtain: 0.30 },
+    { off: true }, { b: 1.00, curtain: 0.45 }, { b: 0.70, curtain: 0.25 }, { off: true },
+    { b: 0.64, curtain: 0.28 }, { b: 0.96, curtain: 0.38 }, { off: true }, { b: 0.86, curtain: 0.40 },
+    { off: true, dim: 0.18 }, { b: 0.94, curtain: 0.26 }, { b: 0.80, curtain: 0.44 }, { off: true },
+  ];
+
+  function drawLit(x, rx, ry, rw, rh, pr, idx) {
+    const bg = x.createLinearGradient(rx, ry, rx, ry + rh);
+    bg.addColorStop(0.00, `rgba(255, 236, 190, ${pr.b})`);
+    bg.addColorStop(0.30, `rgba(250, 190, 100, ${pr.b * 0.92})`);
+    bg.addColorStop(0.72, `rgba(196, 112, 46, ${pr.b * 0.8})`);
+    bg.addColorStop(1.00, `rgba(70, 36, 18, ${pr.b * 0.9})`);
+    x.fillStyle = '#1A1512'; x.fillRect(rx, ry, rw, rh);
+    x.fillStyle = bg; x.fillRect(rx, ry, rw, rh);
+    // Tavan spotu / avize halesi
+    const ceil = x.createRadialGradient(rx + rw * 0.5, ry + 20, 4, rx + rw * 0.5, ry + 34, rw * 0.6);
+    ceil.addColorStop(0, `rgba(255, 252, 230, ${0.9 * pr.b})`);
+    ceil.addColorStop(0.6, `rgba(255, 196, 110, ${0.3 * pr.b})`);
+    ceil.addColorStop(1, 'rgba(255, 160, 60, 0)');
+    x.fillStyle = ceil; x.fillRect(rx, ry, rw, rh * 0.6);
+    // Oda yan duvar gölgeleri (derinlik)
+    x.fillStyle = 'rgba(30, 16, 8, 0.3)';
+    x.fillRect(rx, ry, 22, rh); x.fillRect(rx + rw - 22, ry, 22, rh);
+    // Tül perdeler
+    const cl = rw * pr.curtain;
+    for (let s = 0; s < cl; s += 6) {
+      x.fillStyle = `rgba(255, 244, 222, ${(0.16 + 0.1 * Math.sin(s * 0.45)) * pr.b})`;
+      x.fillRect(rx + s, ry, 4, rh);
+    }
+    // Mobilya silüeti
+    x.fillStyle = 'rgba(24, 16, 12, 0.6)';
+    x.fillRect(rx + rw * 0.2, ry + rh * 0.74, rw * 0.46, rh * 0.26);
+    if (idx % 3 === 0) { x.beginPath(); x.arc(rx + rw * 0.78, ry + rh * 0.66, 16, 0, Math.PI * 2); x.fill(); }
+  }
+
+  for (let row = 0; row < N_CELL; row++) {
+    for (let col = 0; col < N_CELL; col++) {
+      const idx = row * N_CELL + col;
+      const pr = profiles[idx];
+      const pad = 10;
+      const rx = col * cw + pad, ry = row * cw + pad, rw = cw - pad * 2, rh = cw - pad * 2;
+      if (pr.off) {
+        // Kapalı oda: koyu iç + metalik yansıtıcı cam (renk = yansıma tonu)
+        const g = xm.createLinearGradient(rx, ry, rx, ry + rh);
+        g.addColorStop(0, '#A49AA4'); g.addColorStop(1, '#5C6170');
+        xm.fillStyle = g; xm.fillRect(rx, ry, rw, rh);
+        if (pr.dim) {
+          const lg = xe.createRadialGradient(rx + rw * 0.7, ry + rh * 0.62, 2, rx + rw * 0.7, ry + rh * 0.62, rw * 0.35);
+          lg.addColorStop(0, `rgba(255, 190, 110, ${pr.dim * 3})`); lg.addColorStop(1, 'rgba(0,0,0,0)');
+          xe.fillStyle = lg; xe.fillRect(rx, ry, rw, rh);
+        }
+        xr.fillStyle = 'rgb(0, 38, 215)'; xr.fillRect(rx, ry, rw, rh);
+      } else {
+        drawLit(xm, rx, ry, rw, rh, pr, idx);
+        drawLit(xe, rx, ry, rw, rh, pr, idx);
+        xr.fillStyle = 'rgb(0, 26, 30)'; xr.fillRect(rx, ry, rw, rh);
+      }
+      // Siyah alüminyum doğrama (3 kanat + Fransız balkon kaydı) — tüm haritalarda
+      for (const [x, colr] of [[xm, '#14161A'], [xe, '#000'], [xr, 'rgb(0, 90, 210)']]) {
+        x.fillStyle = colr;
+        x.fillRect(rx, ry, rw, 6); x.fillRect(rx, ry + rh - 6, rw, 6);
+        x.fillRect(rx, ry, 6, rh); x.fillRect(rx + rw - 6, ry, 6, rh);
+        x.fillRect(rx + Math.round(rw * 0.33) - 3, ry, 6, rh);
+        x.fillRect(rx + Math.round(rw * 0.67) - 3, ry, 6, rh);
+        x.fillRect(rx, ry + Math.round(rh * 0.64), rw, 4);
+      }
+    }
+  }
+  const tex = (c, srgb) => {
+    const t = new THREE.CanvasTexture(c);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  return { map: tex(cMap, true), emissive: tex(cEm, true), mr: tex(cMr, false), lit: profiles.map((p) => !p.off) };
+}
+
+
+// Zemin kat ticari vitrin (fırın / kafe / mağaza) dokusu — fotoğraftaki sıcak vitrinler
+function podiumStorefrontTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#16181C';
+  x.fillRect(0, 0, 1024, 256);
+
+  const shops = 4;
+  const sw = 1024 / shops;
+  for (let s = 0; s < shops; s++) {
+    const x0 = s * sw + 10, w = sw - 20;
+    const g = x.createLinearGradient(x0, 10, x0, 246);
+    g.addColorStop(0.0, '#FFF4C2');
+    g.addColorStop(0.32, '#FFC456');
+    g.addColorStop(0.75, '#D87D28');
+    g.addColorStop(1.0, '#4A2810');
+    x.fillStyle = g;
+    x.fillRect(x0, 10, w, 236);
+
+    // Sarkıt kafe lambaları (üstte sıcak ışık noktaları)
+    for (let l = 1; l <= 3; l++) {
+      const lx = x0 + (w * l) / 4;
+      x.fillStyle = '#222';
+      x.fillRect(lx - 1, 10, 2, 34);
+      x.fillStyle = '#FFFBE0';
+      x.beginPath(); x.arc(lx, 48, 9, 0, Math.PI * 2); x.fill();
+    }
+
+    // Arka raf / vitrin tezgahı silüetleri
+    x.fillStyle = 'rgba(58, 30, 12, 0.55)';
+    for (let r = 0; r < 3; r++) {
+      x.fillRect(x0 + 18, 72 + r * 26, w * 0.55, 6);
+    }
+    // Tezgah
+    x.fillStyle = 'rgba(42, 22, 10, 0.72)';
+    x.fillRect(x0 + 14, 172, w - 28, 70);
+    x.fillStyle = 'rgba(255, 230, 165, 0.55)';
+    x.fillRect(x0 + 22, 178, w * 0.42, 28);
+
+    // Siyah ince vitrin doğramaları
+    x.fillStyle = '#181A1F';
+    x.fillRect(x0 + w * 0.5 - 2, 10, 4, 236);
+    x.fillRect(x0, 64, w, 4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+// Zemin: 64 m'lik kent ızgarası — ada içleri canlı yeşil çim peyzajlı, çevresi taş kaldırım ve gün batımı yansımalı asfalt
+const GRID = 64;
+function streetTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const x = c.getContext('2d');
+  const px = 512 / GRID;
+  const road = 14 * px, walk = 3.2 * px, mid = 256;
+
+  // Ada içi doğal yeşil peyzaj çimi
+  const lg = x.createRadialGradient(mid, mid, 12, mid, mid, 260);
+  lg.addColorStop(0, '#3D6E2E');
+  lg.addColorStop(1, '#2B5220');
+  x.fillStyle = lg;
+  x.fillRect(0, 0, 512, 512);
+
+  for (let i = 0; i < 1200; i++) {
+    const gx = (i * 73) % 512, gy = (i * 137) % 512;
+    x.fillStyle = i % 2 ? 'rgba(110, 165, 78, 0.14)' : 'rgba(22, 48, 16, 0.15)';
+    x.fillRect(gx, gy, 3, 3);
+  }
+
+  // Açık bazalt/traverten kaldırım
+  x.fillStyle = '#B8B3AA';
+  x.fillRect(0, mid - road / 2 - walk, 512, road + walk * 2);
+  x.fillRect(mid - road / 2 - walk, 0, road + walk * 2, 512);
+
+  // Koyu ıslak asfalt yol (gün batımı yansımalı)
+  x.fillStyle = '#25272C';
+  x.fillRect(0, mid - road / 2, 512, road);
+  x.fillRect(mid - road / 2, 0, road, 512);
+
+  // Yol şeritleri ve sıcak ışık izleri
+  x.fillStyle = 'rgba(248, 224, 184, 0.42)';
+  for (let k = 0; k < 512; k += 32) {
+    if (Math.abs(k + 8 - mid) > road / 2 + 8) {
+      x.fillRect(k, mid - 1, 16, 2);
+      x.fillRect(mid - 1, k, 2, 16);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+// Ana site parseli için canlı biçilmiş çim ve yürüyüş yolu dokusu
+function courtyardLawnTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(256, 256, 30, 256, 256, 260);
+  g.addColorStop(0, '#467D34');
+  g.addColorStop(0.7, '#366628');
+  g.addColorStop(1, '#284E1E');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 512, 512);
+
+  for (let s = 0; s < 512; s += 16) {
+    x.fillStyle = (s / 16) % 2 === 0 ? 'rgba(255, 255, 255, 0.035)' : 'rgba(0, 0, 0, 0.035)';
+    x.fillRect(0, s, 512, 8);
+  }
+  x.strokeStyle = '#D8D3C8';
+  x.lineWidth = 20;
+  x.strokeRect(18, 18, 476, 476);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function windowTexture() {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 128;
   const x = c.getContext('2d');
-  x.fillStyle = '#000'; x.fillRect(0, 0, 64, 128);
+  x.fillStyle = '#181A1E'; x.fillRect(0, 0, 64, 128);
   for (let r = 0; r < 32; r++) {
     for (let k = 0; k < 8; k++) {
       const v = Math.random();
-      if (v < 0.42) continue;
-      const a = v > 0.9 ? 1 : v > 0.7 ? 0.55 : 0.25;
-      x.fillStyle = `rgba(241, 226, 196, ${a})`;
+      if (v < 0.5) continue;
+      const a = v > 0.88 ? 0.9 : v > 0.68 ? 0.5 : 0.22;
+      x.fillStyle = `rgba(255, 204, 128, ${a})`;
       x.fillRect(k * 8 + 2, r * 4 + 1, 4, 2);
     }
   }
@@ -101,93 +436,283 @@ function windowTexture() {
   return t;
 }
 
-export async function createCity(host, { mobile = false, logoUrl }) {
-  const N = mobile ? 32 : 42;
+// Organik ağaç tacı: yüksek alt bölümlü, girintili-çıkıntılı yaprak salkımları + yumuşak (elipsoid) normaller.
+// Köşeli "oyun küresi" görünümü yerine gün batımında yumuşak silüet verir.
+function buildRealisticCanopyGeo(detail = 2) {
+  const clusters = [
+    [0.0, 3.3, 0.0, 1.25, 1.05, 1.25],
+    [-0.75, 2.8, 0.55, 0.95, 0.85, 0.95],
+    [0.80, 2.9, 0.45, 0.92, 0.82, 0.92],
+    [0.15, 2.7, -0.80, 0.98, 0.85, 0.95],
+    [-0.65, 3.1, -0.60, 0.88, 0.80, 0.88],
+    [0.65, 3.5, -0.35, 0.85, 0.78, 0.85],
+    [-0.45, 3.8, 0.25, 0.82, 0.75, 0.82],
+    [0.0, 4.25, 0.0, 0.78, 0.72, 0.78],
+    [0.42, 2.45, 0.72, 0.74, 0.65, 0.74],
+  ];
+  const geos = clusters.map(([cx, cy, cz, sx, sy, sz], idx) => {
+    const g = new THREE.IcosahedronGeometry(1, detail);
+    const P = g.attributes.position, Nn = g.attributes.normal;
+    for (let i = 0; i < P.count; i++) {
+      let x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      const l = Math.hypot(x, y, z); x /= l; y /= l; z /= l;
+      const bump = 1
+        + 0.15 * Math.sin(x * 7.1 + idx) * Math.sin(y * 6.3 + idx * 1.7) * Math.sin(z * 5.7 + idx * 0.9)
+        + 0.07 * Math.sin((x - y + z) * 13.0 + idx * 2.3);
+      P.setXYZ(i, x * bump * sx + cx, y * bump * sy + cy, z * bump * sz + cz);
+      const nx = x / sx, ny = y / sy, nz = z / sz, nl = Math.hypot(nx, ny, nz);
+      Nn.setXYZ(i, nx / nl, ny / nl, nz / nl);
+    }
+    return g;
+  });
+  return mergeGeos(geos);
+}
+
+
+// Hafif HDR bloom (masaüstü): sahne MSAA'lı HalfFloat hedefe çizilir, parlak bölgeler 4 seviyede
+// bulanıklaştırılır ve ton eşleme ile birlikte ekrana birleştirilir. Tabela, vitrin ve açık oda ışıkları hale yayar.
+function createBloom(renderer, { strength = 0.6, threshold = 1.0 } = {}) {
+  const tri = new THREE.BufferGeometry();
+  tri.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+  const quad = new THREE.Mesh(tri);
+  quad.frustumCulled = false;
+  const fsScene = new THREE.Scene();
+  fsScene.add(quad);
+  const fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const vertexShader = 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+  const base = { vertexShader, depthTest: false, depthWrite: false };
+
+  const sceneRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  const LV = 4;
+  const rtOpts = { type: THREE.HalfFloatType, depthBuffer: false };
+  const A = [], B = [];
+  for (let i = 0; i < LV; i++) { A.push(new THREE.WebGLRenderTarget(1, 1, rtOpts)); B.push(new THREE.WebGLRenderTarget(1, 1, rtOpts)); }
+
+  const bright = new THREE.ShaderMaterial({
+    ...base, toneMapped: false,
+    uniforms: { tDiffuse: { value: null }, threshold: { value: threshold } },
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float threshold; varying vec2 vUv;
+      void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; float l = max(c.r, max(c.g, c.b));
+      float k = smoothstep(threshold, threshold * 1.6, l); gl_FragColor = vec4(min(c * k, vec3(6.0)), 1.0); }`,
+  });
+  const blur = new THREE.ShaderMaterial({
+    ...base, toneMapped: false,
+    uniforms: { tDiffuse: { value: null }, dir: { value: new THREE.Vector2() } },
+    fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 dir; varying vec2 vUv;
+      void main(){ vec3 s = texture2D(tDiffuse, vUv).rgb * 0.2270270;
+      s += (texture2D(tDiffuse, vUv + dir * 1.3846154).rgb + texture2D(tDiffuse, vUv - dir * 1.3846154).rgb) * 0.3162162;
+      s += (texture2D(tDiffuse, vUv + dir * 3.2307692).rgb + texture2D(tDiffuse, vUv - dir * 3.2307692).rgb) * 0.0702703;
+      gl_FragColor = vec4(s, 1.0); }`,
+  });
+  const comp = new THREE.ShaderMaterial({
+    ...base, toneMapped: true,
+    uniforms: {
+      tScene: { value: sceneRT.texture }, strength: { value: strength },
+      b0: { value: A[0].texture }, b1: { value: A[1].texture }, b2: { value: A[2].texture }, b3: { value: A[3].texture },
+    },
+    fragmentShader: `uniform sampler2D tScene, b0, b1, b2, b3; uniform float strength; varying vec2 vUv;
+      void main(){
+        vec3 bl = texture2D(b0, vUv).rgb * 0.30 + texture2D(b1, vUv).rgb * 0.30 + texture2D(b2, vUv).rgb * 0.25 + texture2D(b3, vUv).rgb * 0.15;
+        vec2 q = vUv - 0.5; float vig = 1.0 - dot(q, q) * 0.55;
+        gl_FragColor = vec4((texture2D(tScene, vUv).rgb + bl * strength) * vig, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+
+  const pass = (mat, target) => { quad.material = mat; renderer.setRenderTarget(target); renderer.render(fsScene, fsCam); };
+  return {
+    setSize(w, h) {
+      sceneRT.setSize(w, h);
+      for (let i = 0; i < LV; i++) {
+        const s = 2 << i;
+        A[i].setSize(Math.max(1, Math.round(w / s)), Math.max(1, Math.round(h / s)));
+        B[i].setSize(Math.max(1, Math.round(w / s)), Math.max(1, Math.round(h / s)));
+      }
+    },
+    render(scene, camera) {
+      renderer.setRenderTarget(sceneRT);
+      renderer.render(scene, camera);
+      bright.uniforms.tDiffuse.value = sceneRT.texture;
+      pass(bright, A[0]);
+      for (let i = 0; i < LV; i++) {
+        const src = i === 0 ? A[0] : A[i - 1];
+        blur.uniforms.tDiffuse.value = src.texture;
+        blur.uniforms.dir.value.set(1 / A[i].width, 0);
+        pass(blur, B[i]);
+        blur.uniforms.tDiffuse.value = B[i].texture;
+        blur.uniforms.dir.value.set(0, 1 / A[i].height);
+        pass(blur, A[i]);
+      }
+      pass(comp, null);
+    },
+    dispose() {
+      sceneRT.dispose(); A.forEach((r) => r.dispose()); B.forEach((r) => r.dispose());
+      bright.dispose(); blur.dispose(); comp.dispose(); tri.dispose();
+    },
+  };
+}
+
+export async function createCity(host, { mobile = false }) {
+  // N = 11 kat: i=0..1 (2 kat ticari vitrin + kafe teras podyumu), i=2..9 (8 konut katı = 4 çift C-çerçeve), i=10 (çatı teras + alınlık)
+  const N = 11;
+  const BW = 24, BD = 20;
+  const BLOCKS = [
+    { x: 5.5, y: 0, z: 6.5 },     // A Blok (Ön plandaki ana blok)
+    { x: -19.5, y: -1.0, z: -14 } // B Blok (Sol arkadaki ikiz blok)
+  ];
+
   const dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 1.75, 2000 / Math.max(1, host.clientWidth));
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(dpr);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = !mobile;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   host.appendChild(renderer.domElement);
 
+  const SUN_POS = new THREE.Vector3(-72, 46, 68);
   const scene = new THREE.Scene();
-  scene.background = skyTexture();
-  scene.fog = new THREE.Fog(0x7d7a74, mobile ? 220 : 280, mobile ? 820 : 1100);
+  const skyTex = skyTexture(mobile, SUN_POS.clone().normalize());
+  scene.background = skyTex;
+  scene.fog = new THREE.Fog(0xD8946C, mobile ? 170 : 220, mobile ? 560 : 720);
 
+  // Camlar gri stüdyo kutusunu değil, gerçek gün batımı gökyüzünü yansıtır
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.55;
+  const envRT = pmrem.fromEquirectangular(skyTex);
+  scene.environment = envRT.texture;
+  scene.environmentIntensity = 1.0;
 
-  const camera = new THREE.PerspectiveCamera(mobile ? 52 : 36, 1, 0.5, 2000);
+  const camera = new THREE.PerspectiveCamera(mobile ? 46 : 36, 1, 0.5, 1200);
 
-  // Işık: düşük açılı akşam güneşi + gökyüzü
-  const hemi = new THREE.HemisphereLight(0xc9ccd0, 0x2a2b2d, 0.7);
+  // Alçak açılı sıcak gün batımı güneşi (#FFB070) + akşamüstü gökyüzü yarımküre ışığı + cephe dolgu ışığı
+  const hemi = new THREE.HemisphereLight(0xB4BCE0, 0x4A3E34, 0.92);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xf3e3c6, 2.4);
-  sun.position.set(-110, 150, 70);
+  const sun = new THREE.DirectionalLight(0xFFB474, 2.45);
+  sun.position.copy(SUN_POS);
   if (!mobile) {
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
     const s = sun.shadow.camera;
-    s.left = -90; s.right = 90; s.top = 200; s.bottom = -40; s.near = 10; s.far = 500;
+    s.left = -54; s.right = 44; s.top = 58; s.bottom = -12; s.near = 10; s.far = 250;
     sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.6;
+    sun.shadow.normalBias = 0.4;
   }
   scene.add(sun);
 
-  // Malzemeler (palet: platin, gümüş, antrasit)
+  // Sağ cepheyi yumuşak aydınlatan akşamüstü dolgu ışığı (iki cephe arasında doğal 3D kontrast)
+  const fillLight = new THREE.DirectionalLight(0x9AB4DC, 0.65);
+  fillLight.position.set(65, 35, 40);
+  scene.add(fillLight);
+
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  const atlas = defneRoomAtlas();
+  for (const t of [atlas.map, atlas.emissive, atlas.mr]) t.anisotropy = maxAniso;
+  const shopTex = podiumStorefrontTexture();
+  shopTex.anisotropy = maxAniso;
+  const stoneTex = slateStoneTexture();
+  stoneTex.anisotropy = maxAniso;
+  const lawnTex = courtyardLawnTexture();
+  lawnTex.anisotropy = maxAniso;
+
+  // Malzemeler (Defne Evleri gerçekçi mimari paleti)
   const M = {
-    ground: new THREE.MeshStandardMaterial({ color: 0x2c2d2f, roughness: 1 }),
-    soil: new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 1, transparent: true, opacity: 0 }),
-    concrete: new THREE.MeshStandardMaterial({ color: 0xd6d4cf, roughness: 0.82 }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x5d6870, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.78, envMapIntensity: 1.5 }),
-    core: new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 1, emissive: 0xf1dfbe, emissiveIntensity: 0.08 }),
-    metal: new THREE.MeshStandardMaterial({ color: 0xbfc2c5, metalness: 1, roughness: 0.3 }),
-    darkMetal: new THREE.MeshStandardMaterial({ color: 0x232426, metalness: 0.85, roughness: 0.38 }),
-    railing: new THREE.MeshStandardMaterial({ color: 0xd4dadd, metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.28 }),
-    blueprint: new THREE.LineBasicMaterial({ color: 0xdfe3e6, transparent: true, opacity: 0.6 }),
-    survey: new THREE.LineBasicMaterial({ color: 0xd9d7d2, transparent: true, opacity: 0.9 }),
+    ground: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }),
+    soil: new THREE.MeshStandardMaterial({ map: lawnTex, color: 0xffffff, roughness: 0.86, transparent: true, opacity: 0 }),
+    whiteStone: new THREE.MeshStandardMaterial({ color: 0xF2EFE9, roughness: 0.42, metalness: 0.04 }),
+    greyStone: new THREE.MeshStandardMaterial({
+      map: stoneTex, bumpMap: stoneTex, bumpScale: 0.6,
+      color: 0xB4B8BE, roughness: 0.82, metalness: 0.0,
+    }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x8C5232, roughness: 0.6, metalness: 0.0 }),
+    // Açık odalar içten yanar; kapalı odaların camı metalik/pürüzsüz → gün batımı gökyüzünü yansıtır
+    window: new THREE.MeshStandardMaterial({
+      map: atlas.map, color: 0xffffff,
+      metalness: 1, metalnessMap: atlas.mr, roughness: 1, roughnessMap: atlas.mr,
+      emissive: new THREE.Color(0xFFB45C), emissiveMap: atlas.emissive, emissiveIntensity: 1.0,
+      envMapIntensity: 1.15,
+    }),
+    shopWindow: new THREE.MeshStandardMaterial({
+      map: shopTex, color: 0xffffff, roughness: 0.06, metalness: 0.6,
+      emissive: new THREE.Color(0xFFB444), emissiveMap: shopTex, emissiveIntensity: 1.55,
+      envMapIntensity: 2.0,
+    }),
+    sconce: new THREE.MeshBasicMaterial({ color: new THREE.Color(0xFFE2A0).multiplyScalar(3.2) }),
+    darkMetal: new THREE.MeshStandardMaterial({ color: 0x1A1C20, metalness: 0.8, roughness: 0.35 }),
+    railing: new THREE.MeshStandardMaterial({ color: 0xDCEAF4, metalness: 0.35, roughness: 0.05, transparent: true, opacity: 0.38 }),
+    blueprint: new THREE.LineBasicMaterial({ color: 0xF6EFE4, transparent: true, opacity: 0.72 }),
   };
 
   // ---- Zemin ve parsel ----
   const street = streetTexture();
-  street.repeat.set(40, 40);
-  street.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  street.repeat.set(36, 36);
+  street.anisotropy = maxAniso;
   M.ground.map = street;
-  M.ground.color.set(0xffffff);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(GRID * 40, GRID * 40), M.ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(GRID * 36, GRID * 36), M.ground);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const PLOT = 25;
-  const soil = new THREE.Mesh(new THREE.PlaneGeometry(PLOT * 2, PLOT * 2), M.soil);
-  soil.rotation.x = -Math.PI / 2; soil.position.y = 0.02;
+  const PLOT_X = 33, PLOT_Z = 27, CX = -6, CZ = -3;
+  const soil = new THREE.Mesh(new THREE.PlaneGeometry(PLOT_X * 2, PLOT_Z * 2), M.soil);
+  soil.rotation.x = -Math.PI / 2;
+  soil.position.set(CX, 0.03, CZ);
   soil.receiveShadow = true;
   scene.add(soil);
 
-  // Parsel sınırı: zemine serilmiş ince şeritler (1px çizgiden daha okunaklı)
-  const corners = [[-PLOT, -PLOT], [PLOT, -PLOT], [PLOT, PLOT], [-PLOT, PLOT], [-PLOT, -PLOT]];
-  const stripMat = new THREE.MeshBasicMaterial({ color: 0xe9e7e2 });
+  // Parsel çevre bahçe duvarı ve sarı bahçe/sütun lambaları (fotoğraftaki sokak kenarı detayı)
+  const gardenWallGroup = new THREE.Group();
+  const wallBoxes = [
+    { w: PLOT_X * 2, h: 0.9, d: 0.45, x: CX, y: 0.45, z: CZ + PLOT_Z - 0.5 },
+    { w: 0.45, h: 0.9, d: PLOT_Z * 2, x: CX - PLOT_X + 0.5, y: 0.45, z: CZ },
+  ];
+  const lanternBoxes = [];
+  for (let k = -3; k <= 3; k++) {
+    const px = CX + k * 9.5;
+    wallBoxes.push({ w: 0.75, h: 1.45, d: 0.75, x: px, y: 0.72, z: CZ + PLOT_Z - 0.5 });
+    lanternBoxes.push({ w: 0.42, h: 0.42, d: 0.42, x: px, y: 1.65, z: CZ + PLOT_Z - 0.5 });
+  }
+  for (let k = -2; k <= 2; k++) {
+    const pz = CZ + k * 9.5;
+    wallBoxes.push({ w: 0.75, h: 1.45, d: 0.75, x: CX - PLOT_X + 0.5, y: 0.72, z: pz });
+    lanternBoxes.push({ w: 0.42, h: 0.42, d: 0.42, x: CX - PLOT_X + 0.5, y: 1.65, z: pz });
+  }
+  gardenWallGroup.add(
+    new THREE.Mesh(mergeBoxes(wallBoxes), M.whiteStone),
+    new THREE.Mesh(mergeBoxes(lanternBoxes), M.sconce)
+  );
+  gardenWallGroup.visible = false;
+  scene.add(gardenWallGroup);
+
+  // Parsel sınırı: zemine serilmiş ince şeritler
+  const corners = [
+    [CX - PLOT_X, CZ - PLOT_Z],
+    [CX + PLOT_X, CZ - PLOT_Z],
+    [CX + PLOT_X, CZ + PLOT_Z],
+    [CX - PLOT_X, CZ + PLOT_Z],
+  ];
+  const stripMat = new THREE.MeshBasicMaterial({ color: 0xF4EFE6 });
   const strips = new THREE.Group();
-  const rots = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
-  for (let i = 0; i < 4; i++) {
-    const len = PLOT * 2;
-    const s = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.45).translate(len / 2, 0, 0), stripMat);
-    s.position.set(corners[i][0], 0.06, corners[i][1]);
-    s.rotation.y = rots[i];
+  const stripDefs = [
+    { x: corners[0][0], z: corners[0][1], len: PLOT_X * 2, rot: 0 },
+    { x: corners[1][0], z: corners[1][1], len: PLOT_Z * 2, rot: -Math.PI / 2 },
+    { x: corners[2][0], z: corners[2][1], len: PLOT_X * 2, rot: Math.PI },
+    { x: corners[3][0], z: corners[3][1], len: PLOT_Z * 2, rot: Math.PI / 2 },
+  ];
+  for (const sd of stripDefs) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(sd.len, 0.06, 0.45).translate(sd.len / 2, 0, 0), stripMat);
+    s.position.set(sd.x, 0.06, sd.z);
+    s.rotation.y = sd.rot;
     s.scale.x = 0.0001;
     strips.add(s);
   }
   scene.add(strips);
 
   const stakes = new THREE.Group();
-  for (const [x, z] of corners.slice(0, 4)) {
-    const st = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.6, 0.25), M.metal);
+  for (const [x, z] of corners) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.6, 0.28), M.whiteStone);
     st.position.set(x, 0.8, z);
     stakes.add(st);
   }
@@ -195,194 +720,331 @@ export async function createCity(host, { mobile = false, logoUrl }) {
 
   // ---- Temel: kazıklar + plak ----
   const piles = new THREE.Group();
-  const pileGeo = new THREE.CylinderGeometry(0.55, 0.55, 3, 10).translate(0, 1.5, 0);
-  for (let i = -2; i <= 2; i++) for (let k = -2; k <= 2; k++) {
-    const p = new THREE.Mesh(pileGeo, M.concrete);
-    p.position.set(i * 6.5, 0, k * 6.5);
-    p.castShadow = true;
-    piles.add(p);
+  const pileGeo = new THREE.CylinderGeometry(0.5, 0.5, 2.8, 10).translate(0, 1.4, 0);
+  for (const blk of BLOCKS) {
+    for (let i = -2; i <= 2; i++) for (let k = -1; k <= 1; k++) {
+      const p = new THREE.Mesh(pileGeo, M.whiteStone);
+      p.position.set(blk.x + i * 4.8, 0, blk.z + k * 6.5);
+      p.castShadow = !mobile;
+      piles.add(p);
+    }
   }
   scene.add(piles);
 
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(36, 1.6, 36).translate(0, -0.8, 0), M.concrete);
-  slab.castShadow = slab.receiveShadow = true;
+  const slab = new THREE.Group();
+  for (const blk of BLOCKS) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(BW + 3.6, 1.5, BD + 3.6).translate(blk.x, -0.75, blk.z), M.whiteStone);
+    s.castShadow = s.receiveShadow = !mobile;
+    slab.add(s);
+  }
   scene.add(slab);
 
-  // Ana iş parçacığını bloklamamak için ağır kurulum adımları arasında tarayıcıya nefes aldır
   const yieldThread = () => new Promise((r) => setTimeout(r, 0));
   await yieldThread();
 
-  // ---- Katlar (her kat ayrı nesne) ----
-  const types = {
-    podium: { w: 32, d: 32, spacing: 2.4, balcony: false },
-    shaft: { w: 22, d: 22, spacing: 2.2, balcony: true },
-    crown: { w: 19, d: 19, spacing: 1.9, balcony: false },
-  };
-  const typeOf = (i) => (i < 4 ? 'podium' : i >= N - 4 ? 'crown' : 'shaft');
+  // ---- Kat Geometri Şablonları (Gerçek Girintili Pencereler + Derzli Gri Taş Duvar + C-Çerçeve + Ahşap Lamel) ----
+  // Not: Pencereler artık tüm cepheyi kaplayan dev bir kutu değil; gri taş duvarın (BW x BD) içinde
+  // tekil pencere boşlukları olarak konumlanır ve her pencere 4x4 oda atlasından farklı bir odayı gösterir!
+  function buildFloorGeo(kind, variantSeed = 0) {
+    const white = [];
+    const grey = [];
+    const wood = [];
+    const glass = [];
+    const shop = [];
+    const sconce = [];
+    const rail = [];
+    const metal = [];
+    const cad = [];
+    const gh = FH - 0.38;
 
-  const geo = {};
-  for (const [name, t] of Object.entries(types)) {
-    const { w, d } = t;
-    const gh = FH - 0.4;
-    const concrete = [{ w: w + 0.7, h: 0.4, d: d + 0.7, y: 0.2 }];
-    const railing = [];
-    if (t.balcony) {
-      for (const s of [-1, 1]) {
-        concrete.push({ w: 1.6, h: 0.22, d: 10, x: s * (w / 2 + 0.8), y: 0.3 });
-        railing.push({ w: 0.05, h: 1.1, d: 10, x: s * (w / 2 + 1.55), y: 0.95 });
-        concrete.push({ w: 10, h: 0.22, d: 1.6, z: s * (d / 2 + 0.8), y: 0.3 });
-        railing.push({ w: 10, h: 1.1, d: 0.05, z: s * (d / 2 + 1.55), y: 0.95 });
+    if (kind === 'podium0' || kind === 'podium1') {
+      const pw = BW + 1.8, pd = BD + 1.8;
+      // Üst beyaz silme + alt baza
+      white.push({ w: pw + 0.6, h: 0.44, d: pd + 0.6, y: FH - 0.22 });
+      white.push({ w: pw + 0.4, h: 0.24, d: pd + 0.4, y: 0.12 });
+      cad.push({ w: pw + 0.6, h: FH, d: pd + 0.6, y: FH / 2 });
+
+      // İçerideki mağaza/kafe vitrin hacmi
+      shop.push({
+        w: pw - 0.7, h: gh - 0.2, d: pd - 0.7, y: 0.2 + (gh - 0.2) / 2,
+        uvScaleX: 2, uvScaleY: 1, uvOffX: kind === 'podium1' ? 0.25 : 0, uvOffY: 0,
+      });
+
+      // Beyaz taş podyum kolonları ve vitrin bölmeleri
+      for (const sx of [-1, -0.34, 0.34, 1]) {
+        white.push({ w: 0.85, h: gh, d: 0.85, x: sx * (pw / 2 - 0.2), y: gh / 2, z: pd / 2 - 0.2 });
+        white.push({ w: 0.85, h: gh, d: 0.85, x: sx * (pw / 2 - 0.2), y: gh / 2, z: -(pd / 2 - 0.2) });
       }
+      for (const sz of [-0.5, 0.5]) {
+        white.push({ w: 0.85, h: gh, d: 0.85, x: -(pw / 2 - 0.2), y: gh / 2, z: sz * (pd / 2 - 0.2) });
+        white.push({ w: 0.85, h: gh, d: 0.85, x: pw / 2 - 0.2, y: gh / 2, z: sz * (pd / 2 - 0.2) });
+      }
+      if (kind === 'podium1') {
+        rail.push({ w: pw + 0.5, h: 1.05, d: 0.08, y: 0.55, z: pd / 2 + 0.22 });
+        rail.push({ w: 0.08, h: 1.05, d: pd + 0.5, x: -pw / 2 - 0.22, y: 0.55 });
+      }
+    } else if (kind === 'penthouse') {
+      // Çatı teras katı + taşkın beyaz taş çatı alınlığı (cornice)
+      grey.push({ w: BW - 2.2, h: gh, d: BD - 2.2, y: gh / 2, wuv: 1 / 2.4 });
+      const winW = 3.2, winH = gh - 0.35;
+      for (const bx of [-6.2, 0, 6.2]) {
+        glass.push({ w: winW, h: winH, d: BD - 1.9, x: bx, y: gh / 2, uvScaleX: 0.25, uvScaleY: 0.25, uvOffX: 0.25, uvOffY: 0.5 });
+      }
+      for (const bz of [-4.8, 4.8]) {
+        glass.push({ w: BW - 1.9, h: winH, d: winW, z: bz, y: gh / 2, uvScaleX: 0.25, uvScaleY: 0.25, uvOffX: 0.5, uvOffY: 0.25 });
+      }
+      // Geniş eğimli hisli kademeli beyaz taş çatı parapet alınlığı
+      white.push(
+        { w: BW + 1.2, h: 0.35, d: BD + 1.2, y: FH - 0.05 },
+        { w: BW + 1.8, h: 1.35, d: BD + 1.8, y: FH + 0.58 },
+        { w: BW + 2.1, h: 0.26, d: BD + 2.1, y: FH + 1.32 }
+      );
+      rail.push({ w: BW + 0.4, h: 1.0, d: 0.08, y: 0.5, z: BD / 2 + 0.1 });
+      rail.push({ w: 0.08, h: 1.0, d: BD + 0.4, x: -BW / 2 - 0.1, y: 0.5 });
+      cad.push({ w: BW + 1.8, h: FH + 1.2, d: BD + 1.8, y: (FH + 1.2) / 2 });
+    } else {
+      // i = 2..9: 8 Konut Katı — DIŞTA GERÇEK GRİ TAŞ DUVAR (BW x BD), PENCERELER TEKİL GİRİNTİLİ AÇIKLIKLAR!
+      const isPairA = kind.startsWith('res_A');
+      const isTopOfPair = kind.endsWith('top');
+      const dir = isPairA ? 1 : -1;
+
+      // 1. Kat arası beyaz döşeme silmesi + girintinin dibindeki iç çekirdek
+      const REV = 0.36;            // pencere girinti derinliği (söve gölgesi)
+      const yb = 0.38;             // silme üst kotu
+      const head = 0.34;           // pencere üstü taş lento
+      const winH = gh - head;
+      const wy = yb + winH / 2;
+      const WUV = 1 / 2.4;
+      white.push({ w: BW + 0.55, h: 0.38, d: BD + 0.55, y: 0.19 });
+      grey.push({ w: BW - REV * 2, h: gh, d: BD - REV * 2, y: yb + gh / 2, wuv: WUV });
+      cad.push({ w: BW + 0.55, h: FH, d: BD + 0.55, y: FH / 2 });
+
+      // 2. Sık cephe ritmi: pencere — taş/ahşap lamel ayak — pencere (düz gri duvar boşluğu yok)
+      // Z cephelerinde 6, X cephelerinde 5 pencere; ayaklar her C-çerçeve çiftinde kayarak kenetlenir.
+      const PIER = 1.3;
+      const faces = [
+        { axis: 'z', len: BW, half: BD / 2, bays: 6 },
+        { axis: 'x', len: BD, half: BW / 2, bays: 5 },
+      ];
+      faces.forEach((fc, fIdx) => {
+        const bayW = fc.len / fc.bays;
+        const winW = bayW - PIER;
+        for (const sgn of [-1, 1]) {
+          // Cephe-yerel kutu: u = cephe boyunca, out = cephe düzleminden dışa (negatif = içeri)
+          const P = (list, u, w, y, h, depth, out, extra) => {
+            const n = sgn * (fc.half + out);
+            if (fc.axis === 'z') list.push({ w, h, d: depth, x: u, y, z: n, ...extra });
+            else list.push({ w: depth, h, d: w, x: n, y, z: u, ...extra });
+          };
+          // Ayaklar (köşeler dahil)
+          for (let k = 0; k <= fc.bays; k++) {
+            const u = k === 0 ? -fc.len / 2 + PIER / 2 : k === fc.bays ? fc.len / 2 - PIER / 2 : -fc.len / 2 + k * bayW;
+            const isCorner = k === 0 || k === fc.bays;
+            const isWood = !isCorner && (k + (isPairA ? 0 : 1)) % 2 === 1;
+            if (isWood) {
+              P(grey, u, PIER, yb + gh / 2, gh, REV - 0.12, -REV / 2 - 0.06, { wuv: WUV });
+              for (let s = -2; s <= 2; s++) P(wood, u + s * 0.25, 0.13, yb + gh / 2, gh, 0.2, -0.1);
+            } else {
+              P(grey, u, PIER, yb + gh / 2, gh, REV, -REV / 2, { wuv: WUV });
+            }
+          }
+          for (let b = 0; b < fc.bays; b++) {
+            const uc = -fc.len / 2 + (b + 0.5) * bayW;
+            // Lento
+            P(grey, uc, winW, yb + winH + head / 2, head, REV, -REV / 2, { wuv: WUV });
+            // Girintili cam (her pencere atlastan farklı bir oda)
+            const cell = (variantSeed * 7 + fIdx * 5 + (sgn > 0 ? 3 : 0) + b * 3 + (variantSeed % 3) * b) % 16;
+            P(glass, uc, winW, wy, winH, 0.06, -REV + 0.04, {
+              uvScaleX: 0.25, uvScaleY: 0.25, uvOffX: (cell % 4) * 0.25, uvOffY: Math.floor(cell / 4) * 0.25,
+            });
+            // 3D siyah doğrama: yan kasalar + 2 kayıt
+            for (const du of [-winW / 2 + 0.04, winW / 2 - 0.04, -winW / 6, winW / 6]) {
+              P(metal, uc + du, 0.08, wy, winH, 0.1, -REV + 0.1);
+            }
+            // Denizlik + Fransız balkon cam korkuluk ve küpeşte
+            P(white, uc, winW + 0.08, yb + 0.03, 0.06, REV + 0.06, -REV / 2 + 0.03);
+            P(rail, uc, winW - 0.06, yb + 0.55, 1.0, 0.04, -0.08);
+            P(metal, uc, winW, yb + 1.06, 0.05, 0.07, -0.08);
+            P(cad, uc, winW, wy, winH, 0.05, -REV / 2);
+          }
+        }
+      });
+
+
+      // 3. Kenetlenen Beyaz C-Çerçeve Söveler (4 cephede köşeleri saran çıkmalı mimari çerçeveler)
+      const cOffX = dir * (BW * 0.19);
+      const cOffZ = dir * (BD * 0.19);
+      const cW = BW * 0.62, cD = BD * 0.62;
+      const beamY = isTopOfPair ? FH - 0.20 : 0.26;
+
+      for (const sz of [-1, 1]) {
+        white.push({ w: cW, h: 0.46, d: 0.58, x: cOffX, y: beamY, z: sz * (BD / 2 + 0.24) });
+        white.push({ w: 0.62, h: FH, d: 0.58, x: cOffX + dir * (cW / 2 - 0.31), y: FH / 2, z: sz * (BD / 2 + 0.24) });
+        cad.push({ w: cW, h: 0.46, d: 0.58, x: cOffX, y: beamY, z: sz * (BD / 2 + 0.24) });
+        // C-çerçeve içi sıcak duvar aplik ışığı (fotoğraftaki dikey taş aydınlatmaları)
+        if (!isTopOfPair) {
+          sconce.push({ w: 0.24, h: 0.9, d: 0.1, x: dir * 4, y: 1.3, z: sz * (BD / 2 + 0.05) });
+        }
+      }
+      for (const sx of [-1, 1]) {
+        white.push({ w: 0.58, h: 0.46, d: cD, x: sx * (BW / 2 + 0.24), y: beamY, z: cOffZ });
+        white.push({ w: 0.58, h: FH, d: 0.62, x: sx * (BW / 2 + 0.24), y: FH / 2, z: cOffZ + dir * (cD / 2 - 0.31) });
+        cad.push({ w: 0.58, h: 0.46, d: cD, x: sx * (BW / 2 + 0.24), y: beamY, z: cOffZ });
+        if (!isTopOfPair) {
+          sconce.push({ w: 0.1, h: 0.9, d: 0.24, x: sx * (BW / 2 + 0.05), y: 1.3, z: dir * 2 });
+        }
+      }
+
+      // Orta balkon çıkmaları ve cam korkuluklar
+      white.push({ w: 4.8, h: 0.32, d: 0.9, x: 0, y: 0.22, z: BD / 2 + 0.35 });
+      white.push({ w: 0.9, h: 0.32, d: 4.2, x: -BW / 2 - 0.35, y: 0.22, z: 0 });
+      rail.push({ w: 4.6, h: 1.02, d: 0.08, x: 0, y: 0.88, z: BD / 2 + 0.72 });
+      rail.push({ w: 0.08, h: 1.02, d: 4.0, x: -BW / 2 - 0.72, y: 0.88, z: 0 });
     }
-    const mullions = [];
-    const mh = gh;
-    const nW = Math.floor(w / t.spacing);
-    for (let k = 0; k <= nW; k++) {
-      const p = -w / 2 + (k * w) / nW;
-      mullions.push({ w: 0.14, h: mh, d: 0.3, x: p, y: 0.4 + mh / 2, z: d / 2 + 0.05 });
-      mullions.push({ w: 0.14, h: mh, d: 0.3, x: p, y: 0.4 + mh / 2, z: -d / 2 - 0.05 });
-      mullions.push({ w: 0.3, h: mh, d: 0.14, x: w / 2 + 0.05, y: 0.4 + mh / 2, z: p });
-      mullions.push({ w: 0.3, h: mh, d: 0.14, x: -w / 2 - 0.05, y: 0.4 + mh / 2, z: p });
-    }
-    // köşe kanatları (taşıyıcı)
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      mullions.push({ w: 0.7, h: FH, d: 0.7, x: sx * (w / 2 + 0.1), y: FH / 2, z: sz * (d / 2 + 0.1) });
-    }
-    geo[name] = {
-      concrete: mergeBoxes(concrete),
-      glass: new THREE.BoxGeometry(w, gh, d).translate(0, 0.4 + gh / 2, 0),
-      core: new THREE.BoxGeometry(w - 2, gh - 0.6, d - 2).translate(0, 0.4 + gh / 2, 0),
-      metal: mergeBoxes(mullions),
-      railing: railing.length ? mergeBoxes(railing) : null,
+
+    return {
+      white: mergeBoxes(white),
+      grey: grey.length ? mergeBoxes(grey) : null,
+      wood: wood.length ? mergeBoxes(wood) : null,
+      glass: glass.length ? mergeBoxes(glass) : null,
+      shop: shop.length ? mergeBoxes(shop) : null,
+      sconce: sconce.length ? mergeBoxes(sconce) : null,
+      rail: rail.length ? mergeBoxes(rail) : null,
+      metal: metal.length ? mergeBoxes(metal) : null,
+      cadBoxes: cad,
     };
   }
 
+  // Her kat için ayrı oda dağılım tohumu (variantSeed) ile şablon oluştur (katlar birbirinin kopyası olmaz)
+  const floorTemplates = [];
+  for (let i = 0; i < N; i++) {
+    let kind = 'podium0';
+    if (i === 1) kind = 'podium1';
+    else if (i === N - 1) kind = 'penthouse';
+    else if (i >= 2) {
+      const rel = i - 2;
+      const pair = Math.floor(rel / 2);
+      const isTop = rel % 2 === 1;
+      kind = (pair % 2 === 0 ? 'res_A_' : 'res_B_') + (isTop ? 'top' : 'bot');
+    }
+    floorTemplates.push(buildFloorGeo(kind, i + 1));
+  }
+
+  await yieldThread();
+
+  // ---- Çatı Alınlığı (Cornice) Parlak Altın "FETSAN GRUP" Yazısı ----
+  // MeshBasicMaterial kullanılarak güneş açısından bağımsız her zaman net, parlak altın görünüm sağlanır
+  const signTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 1024; c.height = 192;
+    const x = c.getContext('2d');
+    x.clearRect(0, 0, 1024, 192);
+
+    // Koyu bronz gölge konturu + parlak altın harfler (beyaz taş alınlık üzerinde yüksek kontrast)
+    x.lineJoin = 'round';
+    x.font = '800 112px "Jost", "Segoe UI", sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+
+    // Arka sıcak altın hale
+    x.shadowColor = 'rgba(255, 168, 24, 0.95)';
+    x.shadowBlur = 22;
+    x.fillStyle = '#3A2608';
+    x.strokeStyle = '#4A2E08'; x.lineWidth = 10; x.strokeText('FETSAN GRUP', 512, 98);
+    x.fillText('FETSAN GRUP', 515, 102);
+
+    const g = x.createLinearGradient(0, 28, 0, 164);
+    g.addColorStop(0.0, '#FFF8C8');
+    g.addColorStop(0.45, '#FFD046');
+    g.addColorStop(1.0, '#D49212');
+    x.fillStyle = g;
+    x.fillText('FETSAN GRUP', 512, 98);
+
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = maxAniso;
+    return t;
+  })();
+
+  const logoMat = new THREE.MeshBasicMaterial({
+    map: signTex, transparent: true, alphaTest: 0.03, depthWrite: false,
+    color: new THREE.Color(1.9, 1.65, 1.3), // HDR altın → bloom ile alınlığa sıcak hale yayar
+  });
+
+  function createGoldChannelSign(w, h) {
+    return new THREE.Mesh(new THREE.PlaneGeometry(w, h), logoMat);
+  }
+
+  // ---- İkiz Blokların (A ve B) İnşası ----
   const tower = new THREE.Group();
   scene.add(tower);
-  const floors = [];
-  for (let i = 0; i < N; i++) {
-    const g = geo[typeOf(i)];
-    const f = new THREE.Group();
-    f.position.y = SLAB_TOP + i * FH;
-    const parts = [
-      new THREE.Mesh(g.concrete, M.concrete),
-      new THREE.Mesh(g.glass, M.glass),
-      new THREE.Mesh(g.core, M.core),
-      new THREE.Mesh(g.metal, M.metal),
-    ];
-    if (g.railing) parts.push(new THREE.Mesh(g.railing, M.railing));
-    for (const m of parts) {
-      m.castShadow = !mobile && (m.material === M.concrete || m.material === M.core);
-      m.receiveShadow = !mobile && m.material === M.concrete;
-      f.add(m);
-    }
-    f.visible = false;
-    floors.push(f);
-    tower.add(f);
-  }
-  const topY = SLAB_TOP + N * FH;
-
-  // ---- Taç: çerçeve + direk ----
-  const crown = new THREE.Group();
-  const cw = types.crown.w;
-  const crownBoxes = [];
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) crownBoxes.push({ w: 0.8, h: 9, d: 0.8, x: sx * cw / 2, y: 4.5, z: sz * cw / 2 });
-  crownBoxes.push({ w: cw + 0.8, h: 0.8, d: 0.8, y: 9, z: cw / 2 }, { w: cw + 0.8, h: 0.8, d: 0.8, y: 9, z: -cw / 2 });
-  crownBoxes.push({ w: 0.8, h: 0.8, d: cw + 0.8, x: cw / 2, y: 9 }, { w: 0.8, h: 0.8, d: cw + 0.8, x: -cw / 2, y: 9 });
-  crownBoxes.push({ w: cw - 4, h: 3, d: cw - 4, y: 1.5 });
-  crown.add(new THREE.Mesh(mergeBoxes(crownBoxes), M.metal));
-  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.5, 22, 8).translate(0, 11, 0), M.metal);
-  spire.position.y = 9.4;
-  crown.add(spire);
-  crown.position.y = topY;
-  crown.visible = false;
-  crown.traverse((o) => { if (o.isMesh) o.castShadow = !mobile; });
-  tower.add(crown);
-
-  // ---- FETSAN GRUP tabelası (orijinal logo, koyu tabela üzerinde yüksek kontrastlı) ----
+  const floors = Array.from({ length: N }, () => []);
   const signs = new THREE.Group();
-  const rawLogoTex = await new THREE.TextureLoader().loadAsync(logoUrl);
-  const logoTex = (() => {
-    const img = rawLogoTex.image;
-    const w = img.width, h = img.height;
-    const src = document.createElement('canvas');
-    src.width = w; src.height = h;
-    const sctx = src.getContext('2d');
-    sctx.drawImage(img, 0, 0);
-    const id = sctx.getImageData(0, 0, w, h);
-    const d = id.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const a = d[i + 3];
-      if (a < 8) { d[i + 3] = 0; continue; }
-      const r = d[i], b = d[i + 2];
-      if (r - b > 45) {
-        // Altın bina ikonu, "FETSAN GRUP" ve elmas (◆)
-        d[i] = 240; d[i + 1] = 200; d[i + 2] = 48;
-        d[i + 3] = Math.min(255, Math.round(Math.pow(a / 255, 0.72) * 255));
-      } else {
-        // Orijinal PNG'de siyah olan yatay çizgi ve "FETTAHOĞLU YAPI · AST MİMARLIK" yazısını
-        // koyu tabela üzerinde net okunması için parlak platin/beyaza çevir ve ince vuruşları güçlendir
-        d[i] = 244; d[i + 1] = 242; d[i + 2] = 236;
-        d[i + 3] = Math.min(255, Math.round(Math.pow(a / 255, 0.52) * 255));
+  tower.add(signs);
+
+  const wirePos = [];
+
+  BLOCKS.forEach((blk, bIdx) => {
+    const bGroup = new THREE.Group();
+    bGroup.position.set(blk.x, blk.y, blk.z);
+    tower.add(bGroup);
+
+    for (let i = 0; i < N; i++) {
+      // B blokta oda varyasyonlarını kaydır
+      const tpl = floorTemplates[i];
+      const f = new THREE.Group();
+      const y0 = SLAB_TOP + i * FH;
+      f.position.y = y0;
+
+      const parts = [new THREE.Mesh(tpl.white, M.whiteStone)];
+      if (tpl.grey) parts.push(new THREE.Mesh(tpl.grey, M.greyStone));
+      if (tpl.glass) parts.push(new THREE.Mesh(tpl.glass, M.window));
+      if (tpl.shop) parts.push(new THREE.Mesh(tpl.shop, M.shopWindow));
+      if (tpl.wood) parts.push(new THREE.Mesh(tpl.wood, M.wood));
+      if (tpl.sconce) parts.push(new THREE.Mesh(tpl.sconce, M.sconce));
+      if (tpl.rail) parts.push(new THREE.Mesh(tpl.rail, M.railing));
+      if (tpl.metal) parts.push(new THREE.Mesh(tpl.metal, M.darkMetal));
+
+      for (const m of parts) {
+        m.castShadow = !mobile && (m.material === M.whiteStone || m.material === M.greyStone);
+        m.receiveShadow = !mobile && (m.material === M.whiteStone || m.material === M.greyStone);
+        f.add(m);
+      }
+
+      f.visible = false;
+      floors[i].push(f);
+      bGroup.add(f);
+
+      for (const cb of tpl.cadBoxes) {
+        const e = new THREE.EdgesGeometry(new THREE.BoxGeometry(cb.w, cb.h, cb.d));
+        const a = e.attributes.position.array;
+        const cx = blk.x + (cb.x || 0);
+        const cy = blk.y + y0 + (cb.y || 0);
+        const cz = blk.z + (cb.z || 0);
+        for (let k = 0; k < a.length; k += 3) {
+          wirePos.push(a[k] + cx, a[k + 1] + cy, a[k + 2] + cz);
+        }
+        e.dispose();
       }
     }
-    sctx.putImageData(id, 0, 0);
-    const out = document.createElement('canvas');
-    out.width = w * 2; out.height = h * 2;
-    const octx = out.getContext('2d');
-    octx.imageSmoothingEnabled = true;
-    octx.imageSmoothingQuality = 'high';
-    octx.drawImage(src, 0, 0, out.width, out.height);
-    const tex = new THREE.CanvasTexture(out);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    rawLogoTex.dispose();
-    return tex;
-  })();
-  await yieldThread();
-  const aspect = rawLogoTex.image.width / rawLogoTex.image.height;
-  const LW = 15, LH = LW / aspect;
-  const logoMat = new THREE.MeshStandardMaterial({
-    map: logoTex, transparent: true, alphaTest: 0.04, depthWrite: false,
-    metalness: 0.22, roughness: 0.36,
-    emissive: 0xffffff, emissiveMap: logoTex, emissiveIntensity: 0.28,
+
+    // Çatı alınlığına (cornice) her iki cephede (Z+ sağ ön ve X- sol yan) parlak altın FETSAN GRUP imzası
+    const corniceY = blk.y + SLAB_TOP + (N - 1) * FH + FH + 0.58;
+    const sFront = createGoldChannelSign(14.5, 2.7);
+    sFront.position.set(blk.x, corniceY, blk.z + BD / 2 + 0.94);
+    const sSide = createGoldChannelSign(13.0, 2.45);
+    sSide.rotation.y = -Math.PI / 2;
+    sSide.position.set(blk.x - BW / 2 - 0.94, corniceY, blk.z);
+    signs.add(sFront, sSide);
   });
-  const reliefMat = new THREE.MeshBasicMaterial({ map: logoTex, color: 0x000000, transparent: true, opacity: 0.55, alphaTest: 0.08, depthWrite: false });
-  const signY = SLAB_TOP + (N - 2) * FH + FH * 0.55;
-  for (const side of [1, -1]) {
-    const s = new THREE.Group();
-    const back = new THREE.Mesh(new THREE.BoxGeometry(LW + 1.6, LH + 1.2, 0.35), M.darkMetal);
-    const frame = new THREE.Mesh(mergeBoxes([
-      { w: LW + 1.9, h: 0.16, d: 0.45, y: (LH + 1.2) / 2 },
-      { w: LW + 1.9, h: 0.16, d: 0.45, y: -(LH + 1.2) / 2 },
-      { w: 0.16, h: LH + 1.36, d: 0.45, x: (LW + 1.6) / 2 + 0.08 },
-      { w: 0.16, h: LH + 1.36, d: 0.45, x: -(LW + 1.6) / 2 - 0.08 },
-    ]), M.metal);
-    const relief = new THREE.Mesh(new THREE.PlaneGeometry(LW, LH), reliefMat);
-    relief.position.set(0.07, -0.07, 0.19);
-    const logo = new THREE.Mesh(new THREE.PlaneGeometry(LW, LH), logoMat);
-    logo.position.z = 0.24;
-    s.add(back, frame, relief, logo);
-    s.position.set(0, signY, side * (cw / 2 + 0.75));
-    if (side < 0) s.rotation.y = Math.PI;
-    signs.add(s);
-  }
   signs.visible = false;
-  tower.add(signs);
-  const signLight = new THREE.PointLight(0xf1e2c4, 0, 40, 2);
-  signLight.position.set(0, signY + 2, cw / 2 + 14);
+
+  const topY = SLAB_TOP + N * FH;
+  const signLight = new THREE.PointLight(0xFFD27D, 0, 50, 2);
+  signLight.position.set(BLOCKS[0].x - 6, topY + 2, BLOCKS[0].z + BD / 2 + 8);
   tower.add(signLight);
 
-  // ---- Mimari çizim (blueprint) — tüm binanın tel kafesi, alttan üste çizilir ----
-  const wirePos = [];
-  for (let i = 0; i < N; i++) {
-    const t = types[typeOf(i)];
-    const e = new THREE.EdgesGeometry(new THREE.BoxGeometry(t.w, FH, t.d));
-    const a = e.attributes.position.array;
-    const y0 = SLAB_TOP + i * FH + FH / 2;
-    for (let k = 0; k < a.length; k += 3) wirePos.push(a[k], a[k + 1] + y0, a[k + 2]);
-    e.dispose();
-  }
+  // ---- 360° Mimari Çizim (Blueprint) Tel Kafesi ----
   const wireGeo = new THREE.BufferGeometry();
   wireGeo.setAttribute('position', new THREE.Float32BufferAttribute(wirePos, 3));
   const wireTotal = wirePos.length / 3;
@@ -390,48 +1052,64 @@ export async function createCity(host, { mobile = false, logoUrl }) {
   const wire = new THREE.LineSegments(wireGeo, M.blueprint);
   scene.add(wire);
 
-  // ---- Çevre kent: ızgaraya oturan adalar, yakında alçak, uzakta yükselen siluet ----
+  await yieldThread();
+
+  // ---- Çevre Kent ve Çok Kümeli Gerçekçi Ağaçlar (Ön Cephe Görüşünü Kapatmaz, Kenarları Çerçeveler) ----
   let seed = 7;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const lots = [];
   const trees = [];
-  const R = mobile ? 4 : 6;
+  const R = mobile ? 4 : 5;
   for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) {
     if (!i && !j) continue;
     const cx = i * GRID, cz = j * GRID;
     const ring = Math.max(Math.abs(i), Math.abs(j));
-    if (rnd() < 0.1 && ring > 1) { // park adası
-      for (let t = 0; t < 10; t++) trees.push([cx + (rnd() - 0.5) * 40, cz + (rnd() - 0.5) * 40, 0.9 + rnd() * 0.6]);
+    if (rnd() < 0.16 && ring > 1) {
+      for (let t = 0; t < 8; t++) trees.push([cx + (rnd() - 0.5) * 38, cz + (rnd() - 0.5) * 38, 0.85 + rnd() * 0.45]);
       continue;
     }
     const hOf = () => {
-      if (ring === 1) return 4 + rnd() * 6;          // komşu: alçak
-      if (ring === 2) return 8 + rnd() * 12;
-      if (rnd() > 0.82) return 45 + rnd() * 70;       // uzak siluet
-      return 12 + rnd() * 30;
+      if (ring === 1) return 6 + rnd() * 7;
+      if (ring === 2) return 10 + rnd() * 10;
+      return 12 + rnd() * 16;
     };
     const pattern = rnd();
-    if (pattern < 0.3) lots.push([cx, cz, 30 + rnd() * 12, 30 + rnd() * 12, hOf()]);
-    else if (pattern < 0.65) {
-      lots.push([cx - 12, cz, 20, 40, hOf()]);
-      lots.push([cx + 12, cz, 20, 40, hOf()]);
-    } else {
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) if (rnd() > 0.15) lots.push([cx + sx * 12, cz + sz * 12, 18 + rnd() * 3, 18 + rnd() * 3, hOf()]);
+    if (pattern < 0.35) lots.push([cx, cz, 26 + rnd() * 10, 26 + rnd() * 10, hOf()]);
+    else {
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        if (rnd() > 0.2) lots.push([cx + sx * 12, cz + sz * 12, 16 + rnd() * 3, 16 + rnd() * 3, hOf()]);
+      }
     }
-    // sokak ağaçları (yakın çevrede)
     if (ring <= 2) for (let t = -2; t <= 2; t++) {
-      trees.push([cx + t * 10, cz - 23.8, 0.8 + rnd() * 0.4]);
-      trees.push([cx - 23.8, cz + t * 10, 0.8 + rnd() * 0.4]);
+      trees.push([cx + t * 11, cz - 23.8, 0.8 + rnd() * 0.35]);
     }
   }
-  // parselin çevresindeki ağaçlar
-  for (let t = -2; t <= 2; t++) {
-    trees.push([t * 10, -23.8, 0.9], [t * 10, 23.8, 0.9], [-23.8, t * 10, 0.9], [23.8, t * 10, 0.9]);
+  // Site çevresi peyzaj ağaçları: Kameranın ön-sol bakış koridorunu (x: -24..14, z: 14..32) AÇIK bırak,
+  // ağaçları fotoğraftaki gibi sağ/sol yanlara ve iki blok arasına yerleştir!
+  const siteTreeCoords = [
+    [22, 16, 1.05], [24, 6, 1.15], [23, -6, 1.0], [21, -16, 0.95],
+    [-36, 10, 1.0], [-37, -2, 1.1], [-35, -14, 0.95], [-34, -24, 1.05],
+    [18, 19, 0.82], [-30, 18, 0.85], [26, 24, 0.9],
+    [-6, -27, 1.0], [8, -26, 0.95], [-20, -28, 1.05],
+  ];
+  for (const st of siteTreeCoords) trees.push(st);
+  // Final kamera ile A blok arasındaki görüş koridorunu ağaçlardan temizle (cephe ve vitrinler kapanmasın)
+  {
+    const fa = -Math.PI * 0.23, ux = Math.sin(fa), uz = Math.cos(fa);
+    for (let k = trees.length - 1; k >= 0; k--) {
+      const rx = trees[k][0] - (-3.2), rz = trees[k][1] - (-1.2);
+      const t = rx * ux + rz * uz;               // kameraya doğru mesafe
+      const perp = Math.abs(rx * uz - rz * ux);  // görüş ekseninden sapma
+      if (t > 18 && t < 140 && perp < 6 + t * 0.32) trees.splice(k, 1);
+    }
   }
 
-  const cityMat = new THREE.MeshStandardMaterial({ color: 0x6f7174, roughness: 0.8, metalness: 0.15, emissive: 0xf1e2c4, emissiveMap: windowTexture(), emissiveIntensity: 0.05 });
+  const cityMat = new THREE.MeshStandardMaterial({
+    color: 0x8A8782, roughness: 0.78, metalness: 0.1,
+    emissive: 0xFFCA7A, emissiveMap: windowTexture(), emissiveIntensity: 0.15,
+  });
   const city = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), cityMat, lots.length);
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x3a3b3d, roughness: 0.9 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x4A4C50, roughness: 0.88 });
   const roofs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), roofMat, lots.length);
   const dummy = new THREE.Object3D();
   const col = new THREE.Color();
@@ -441,49 +1119,72 @@ export async function createCity(host, { mobile = false, logoUrl }) {
     dummy.scale.set(w, h, d);
     dummy.updateMatrix();
     city.setMatrixAt(k, dummy.matrix);
-    col.setHSL(0.08, 0.025, 0.36 + rnd() * 0.22);
+    col.setHSL(0.08, 0.06, 0.48 + rnd() * 0.2);
     city.setColorAt(k, col);
-    // çatı parapeti: üstte hafif içeri çekilmiş koyu kat
     dummy.position.set(x, h, z);
-    dummy.scale.set(w * 0.86, 1.2, d * 0.86);
+    dummy.scale.set(w * 0.88, 0.8, d * 0.88);
     dummy.updateMatrix();
     roofs.setMatrixAt(k, dummy.matrix);
   });
   city.castShadow = city.receiveShadow = !mobile;
   scene.add(city, roofs);
 
-  const treeMat = new THREE.MeshStandardMaterial({ color: 0x48504a, roughness: 1 });
-  const treeGeo = new THREE.IcosahedronGeometry(1.3, 2).scale(1, 1.2, 1).translate(0, 2.8, 0);
-  const treeMesh = new THREE.InstancedMesh(treeGeo, treeMat, trees.length);
+  // Gerçekçi ağaçlar: Kahverengi gövde + 9 kümeli doğal yaprak tacı + ağaç başına doğal ton varyasyonu
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4A3525, roughness: 0.92 });
+  const trunkGeo = new THREE.CylinderGeometry(0.18, 0.32, 2.2, 7).translate(0, 1.1, 0);
+  const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
+
+  const canopyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 });
+  const canopyGeo = buildRealisticCanopyGeo(mobile ? 1 : 2);
+  const canopyMesh = new THREE.InstancedMesh(canopyGeo, canopyMat, trees.length);
+
   trees.forEach(([x, z, s], k) => {
     dummy.position.set(x, 0, z);
-    dummy.rotation.set(0, rnd() * Math.PI, 0);
+    dummy.rotation.set(0, rnd() * Math.PI * 2, 0);
     dummy.scale.setScalar(s);
     dummy.updateMatrix();
-    treeMesh.setMatrixAt(k, dummy.matrix);
+    trunkMesh.setMatrixAt(k, dummy.matrix);
+    canopyMesh.setMatrixAt(k, dummy.matrix);
+    // Doğal Akdeniz/İstanbul peyzaj yeşili varyasyonu (koyu servi, zeytin yeşili ve sıcak gün batımı yaprak tonu)
+    col.setHSL(0.25 + (rnd() - 0.5) * 0.05, 0.30 + rnd() * 0.12, 0.11 + rnd() * 0.06); // gün batımında koyu zeytin/çam yeşili silüet
+    canopyMesh.setColorAt(k, col);
   });
-  treeMesh.castShadow = !mobile;
-  scene.add(treeMesh);
+  canopyMesh.castShadow = canopyMesh.receiveShadow = !mobile;
+  scene.add(trunkMesh, canopyMesh);
 
-  // ---- Kamera rotası ----
-  const H = topY + 30;
-  const A0 = -0.503;                // p ≈ 0.92'de ön cephe kameraya döner
-  const TURN = Math.PI * 2 * 1.2;   // tam 360° + final geniş dönüş
+  // ---- Kamera Rotası: Daha Geniş Kadraj + Her Ekran Oranında Tam Sığdırma ----
+  const H = topY + 2.5;             // ~41.8 m
+  const FOCUS_X = -3.2, FOCUS_Z = -1.2;
+  const A_FINAL = -Math.PI * 0.23;  // (-X, +Z) ön-sol köşe bakışı: A bloğun iki cephesi + sol arkada B blok
   const zoom = mobile ? 1.15 : 1;
-  // [p, yarıçap, kamera yüksekliği, bakış yüksekliği]
+
+  function cameraAngle(p) {
+    if (p < 0.14) return lerp(A_FINAL - 0.45, A_FINAL, smooth(p / 0.14));
+    if (p < 0.32) return A_FINAL + smooth((p - 0.14) / 0.18) * (Math.PI * 2); // Çizim fazında tam 360°
+    if (p < 0.86) return A_FINAL + Math.PI * 2 + smooth((p - 0.32) / 0.54) * (Math.PI * 2);
+    return A_FINAL + Math.PI * 4;
+  }
+
+  // [p, yarıçap, kamera yüksekliği, bakış yüksekliği] — Bir tık daha geniş, sokaktan çatı alınlığına tam kadraj
   const keys = [
-    [0.00, 78, 40, 0],
-    [0.12, 66, 28, 0],
-    [0.22, 120, 70, 70],
-    [0.32, 135, 95, 80],
-    [0.40, 62, 16, 3],
-    [0.44, 60, 12, 6],
+    [0.00, 66, 28, 0],
+    [0.12, 58, 20, 2],
+    [0.22, 68, 27, H * 0.46],
+    [0.32, 70, 28, H * 0.48],
+    [0.40, 56, 12, 4],
+    [0.44, 54, 10, 6],
   ];
+  // Final: kamera sokak göz hizasına iner; dikey çizgiler shift-lens ile paralel tutulur (bkz. tick)
   const finalKeys = [
-    [0.86, 82, H * 0.82, H * 0.66],
-    [0.93, 96, H * 0.8, H * 0.68],
-    [1.00, 150, H * 1.02, H * 0.5],
+    [0.86, 62, 13.5, H * 0.48],
+    [0.93, 64, 6.0,  H * 0.49],
+    [1.00, 66, 2.3,  H * 0.49],
   ];
+  const BASE_FOV = camera.fov;
+  // A blok ön-sol köşesi ve alınlık üst kotu (shift-lens kadrajı buna göre çözülür)
+  const A_CORNER = { x: BLOCKS[0].x - BW / 2 - 1, z: BLOCKS[0].z + BD / 2 + 1 };
+  const TOP_Y = SLAB_TOP + N * FH + 1.6;
+
   function sample(list, p) {
     for (let k = 0; k < list.length - 1; k++) {
       const a = list[k], b = list[k + 1];
@@ -495,45 +1196,53 @@ export async function createCity(host, { mobile = false, logoUrl }) {
     const l = list[list.length - 1];
     return [l[1], l[2], l[3]];
   }
+
   function cameraTarget(p, built) {
     let r, y, ly;
     if (p < 0.44) {
       [r, y, ly] = sample(keys, p);
-      // Dar dikey ekranda parsel ve çizim kadraja sığsın; inşaat başlarken yaklaş
-      const fit = lerp(Math.max(1, 0.78 / camera.aspect), 1, smooth((p - 0.36) / 0.08));
-      r *= fit; y *= fit;
-    }
-    else if (p < 0.86) {
+    } else if (p < 0.86) {
       const h = SLAB_TOP + built * FH;
       const t = (p - 0.44) / 0.42;
-      r = lerp(60, 82, t);
-      y = 12 + h * 0.85;
-      ly = Math.max(6, h * 0.62);
-    } else [r, y, ly] = sample(finalKeys, p);
-    const a = A0 + p * TURN;
-    return { x: Math.sin(a) * r * zoom, y, z: Math.cos(a) * r * zoom, ly };
+      r = lerp(54, 62, t);
+      y = lerp(10, 13.5, t) + (1 - t) * h * 0.22;
+      ly = Math.max(6, h * 0.48);
+    } else {
+      [r, y, ly] = sample(finalKeys, p);
+    }
+    // Kare veya dar pencerelerde (aspect < 1.35) binanın yanlardan/üstten kesilmemesi için tüm fazlarda otomatik genişlet
+    const aspectFit = Math.max(1, 1.32 / Math.max(0.58, camera.aspect));
+    r *= aspectFit;
+
+    const a = cameraAngle(p);
+    return {
+      x: FOCUS_X + Math.sin(a) * r * zoom,
+      y,
+      z: FOCUS_Z + Math.cos(a) * r * zoom,
+      ly,
+      w: smooth((p - 0.86) / 0.14),
+    };
   }
 
   // ---- Durum ----
   let progress = 0;
-  const cur = { x: 0, y: 0, z: 0, ly: 0 };
-  const init = cameraTarget(0, 0);
-  Object.assign(cur, init);
+  const cur = { x: 0, y: 0, z: 0, ly: 0, w: 0 };
+  Object.assign(cur, cameraTarget(0, 0));
 
   function apply(p) {
-    // Arazi
+    // 1. Arazi
     const plotT = clamp01((p + 0.025) / 0.085);
     strips.children.forEach((s, i) => { s.scale.x = Math.max(0.0001, easeOut(plotT * 4 - i)); });
     stakes.children.forEach((s, i) => { s.scale.y = Math.max(0.001, easeOut(plotT * 4 - i + 0.4)); });
-    M.soil.opacity = 0.9 * smooth((p + 0.02) / 0.06);
+    M.soil.opacity = 0.96 * smooth((p + 0.02) / 0.08);
 
-    // Çizim
+    // 2. 360° Çizim (Tel kafes)
     const wireT = smooth((p - 0.14) / 0.16);
     wireGeo.setDrawRange(0, Math.floor(wireT * wireTotal / 2) * 2);
-    M.blueprint.opacity = 0.6 * (1 - smooth((p - 0.74) / 0.12));
+    M.blueprint.opacity = 0.72 * (1 - smooth((p - 0.74) / 0.12));
     wire.visible = wireT > 0 && M.blueprint.opacity > 0.01;
 
-    // Temel
+    // 3. Temel
     const pileT = (p - 0.32) / 0.06;
     piles.children.forEach((pl, i) => {
       const t = easeOut(pileT * 2 - (i % 5) * 0.12);
@@ -541,34 +1250,34 @@ export async function createCity(host, { mobile = false, logoUrl }) {
       pl.visible = t > 0.001;
     });
     const slabT = easeOut((p - 0.37) / 0.06);
-    slab.position.y = lerp(-1.7, SLAB_TOP, slabT);
+    slab.position.y = lerp(-1.6, SLAB_TOP, slabT);
     slab.visible = slabT > 0.001;
+    gardenWallGroup.visible = slabT > 0.5;
 
-    // Yapı
-    const b = clamp01((p - 0.44) / 0.4) * (N + 1.5);
+    // 4. Yapı (Her iki blokta kat kat yükselir)
+    const b = clamp01((p - 0.44) / 0.4) * (N + 0.6);
     for (let i = 0; i < N; i++) {
       const t = clamp01(b - i);
-      const f = floors[i];
-      f.visible = t > 0.001;
-      if (f.visible) {
-        const e = easeOut(t);
-        f.scale.set(1, Math.max(0.001, e), 1);
-        f.position.y = SLAB_TOP + i * FH + (1 - e) * 2.5;
+      const vis = t > 0.001;
+      const e = easeOut(t);
+      for (const f of floors[i]) {
+        f.visible = vis;
+        if (vis) {
+          f.scale.set(1, Math.max(0.001, e), 1);
+          f.position.y = SLAB_TOP + i * FH + (1 - e) * 2.2;
+        }
       }
     }
-    const crownT = easeOut(b - N);
-    crown.visible = crownT > 0.001;
-    crown.scale.set(1, Math.max(0.001, crownT), 1);
-    signs.visible = b > N - 1.6;
+    signs.visible = b > N - 1.1;
 
-    // Final: tabela ve kent ışıkları
-    const glow = smooth((p - 0.84) / 0.07);
-    logoMat.emissiveIntensity = 0.28 + glow * 0.52;
-    signLight.intensity = mobile ? 0 : glow * 220;
-    M.core.emissiveIntensity = 0.08 + smooth((p - 0.8) / 0.12) * 0.9;
-    cityMat.emissiveIntensity = 0.05 + smooth((p - 0.82) / 0.14) * 0.85;
-    sun.intensity = lerp(2.4, 0.9, smooth((p - 0.82) / 0.16));
-    hemi.intensity = lerp(0.7, 0.35, smooth((p - 0.82) / 0.16));
+    // 5. Final: Doğal gün batımı aydınlatması ve gerçekçi oda ışıkları
+    const glow = smooth((p - 0.80) / 0.14);
+    signLight.intensity = mobile ? 0 : glow * 150;
+    M.window.emissiveIntensity = 0.85 + glow * 0.45;
+    M.shopWindow.emissiveIntensity = 1.30 + glow * 0.60;
+    cityMat.emissiveIntensity = 0.12 + glow * 0.32;
+    sun.intensity = lerp(2.35, 2.75, glow);
+    hemi.intensity = lerp(0.85, 1.02, glow);
 
     return Math.min(N, Math.floor(b));
   }
@@ -578,11 +1287,18 @@ export async function createCity(host, { mobile = false, logoUrl }) {
   let frames = 0;
   let running = false;
   let raf = 0;
+  let lastShift = -1;
+  let bloom = null;
+  if (!mobile && renderer.capabilities.isWebGL2) {
+    try { bloom = createBloom(renderer, { strength: 0.5, threshold: 1.25 }); } catch (e) { bloom = null; }
+  }
 
   function resize() {
     const w = host.clientWidth || 1, h = host.clientHeight || 1;
     renderer.setSize(w, h, false);
+    if (bloom) bloom.setSize(Math.round(w * dpr), Math.round(h * dpr));
     camera.aspect = w / h;
+    lastShift = -1;
     camera.updateProjectionMatrix();
     dirty = true;
   }
@@ -592,23 +1308,47 @@ export async function createCity(host, { mobile = false, logoUrl }) {
 
   function tick() {
     raf = requestAnimationFrame(tick);
-    const tgt = cameraTarget(progress, Math.min(N, clamp01((progress - 0.44) / 0.4) * (N + 1.5)));
+    const tgt = cameraTarget(progress, Math.min(N, clamp01((progress - 0.44) / 0.4) * (N + 0.6)));
     const k = 0.16;
-    const dx = tgt.x - cur.x, dy = tgt.y - cur.y, dz = tgt.z - cur.z, dl = tgt.ly - cur.ly;
-    cur.x += dx * k; cur.y += dy * k; cur.z += dz * k; cur.ly += dl * k;
-    const moving = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) + Math.abs(dl) > 0.02;
+    const dx = tgt.x - cur.x, dy = tgt.y - cur.y, dz = tgt.z - cur.z, dl = tgt.ly - cur.ly, dw = tgt.w - cur.w;
+    cur.x += dx * k; cur.y += dy * k; cur.z += dz * k; cur.ly += dl * k; cur.w += dw * k;
+    const moving = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) + Math.abs(dl) + Math.abs(dw) * 10 > 0.02;
     if (moving || dirty) frames = 0; else frames++;
-    if (frames > 2) return; // sahne durağansa GPU'yu yorma
+    if (frames > 2) return;
     camera.position.set(cur.x, cur.y, cur.z);
-    camera.lookAt(0, cur.ly, 0);
-    renderer.render(scene, camera);
+
+    // Mimari fotoğraf kamerası (shift-lens): kamera yatay bakar, kadraj yukarı kaydırılır;
+    // bina geriye devrilmez, sokak kotundan alınlığa kadar tek karede görünür.
+    let lookY = cur.ly, fov = BASE_FOV, shift = 0;
+    if (cur.w > 0.001) {
+      const dist = Math.max(10, Math.hypot(A_CORNER.x - cur.x, A_CORNER.z - cur.z));
+      const tanTop = (TOP_Y + 3.0 - cur.y) / dist;
+      const tanBot = (-0.8 - cur.y) / dist;
+      let half = (tanTop - tanBot) / 2;
+      // Dar ekranlarda yatay açı yetmezse dikey açıyı büyüt
+      half = Math.min(Math.tan(THREE.MathUtils.degToRad(34)), half);
+      const center = (tanTop + tanBot) / 2;
+      fov = lerp(BASE_FOV, THREE.MathUtils.radToDeg(2 * Math.atan(half)), cur.w);
+      shift = (center / (2 * half)) * cur.w;
+      lookY = lerp(cur.ly, cur.y, cur.w);
+    }
+    if (Math.abs(camera.fov - fov) > 1e-4 || shift !== lastShift) {
+      camera.fov = fov;
+      const W = host.clientWidth || 1, Hh = host.clientHeight || 1;
+      if (shift > 1e-4) camera.setViewOffset(W, Hh, 0, -shift * Hh, W, Hh);
+      else camera.clearViewOffset();
+      lastShift = shift;
+      camera.updateProjectionMatrix();
+    }
+    camera.lookAt(FOCUS_X, lookY, FOCUS_Z);
+    if (bloom) bloom.render(scene, camera);
+    else renderer.render(scene, camera);
     dirty = false;
   }
 
-  // Sahne görünür olmadan önce tüm materyal shader'larını arka planda (KHR_parallel_shader_compile) derle;
-  // böylece ilk görünür karede 60-150 ms'lik senkron shader derleme takılması yaşanmaz.
-  floors.forEach((f) => { f.visible = true; });
-  crown.visible = true;
+  // Sahne görünür olmadan önce tüm materyal shader'larını arka planda (KHR_parallel_shader_compile) derle
+  for (const list of floors) for (const f of list) f.visible = true;
+  gardenWallGroup.visible = true;
   signs.visible = true;
   wire.visible = true;
   if (typeof renderer.compileAsync === 'function') {
@@ -635,7 +1375,8 @@ export async function createCity(host, { mobile = false, logoUrl }) {
     },
     destroy() {
       cancelAnimationFrame(raf); io.disconnect(); ro.disconnect();
-      renderer.dispose(); pmrem.dispose();
+      if (bloom) bloom.dispose();
+      renderer.dispose(); pmrem.dispose(); envRT.dispose(); skyTex.dispose();
       host.removeChild(renderer.domElement);
     },
   };
