@@ -792,33 +792,145 @@ export async function createCity(host, { mobile = false }) {
   const PILE_L = 14;                       // görünür kazık boyu (sondajla zemine iner)
   const FLOOR_Y = -DEPTH;
 
-  const strataTex = (() => {
+  // ---- Şantiye dokuları (prosedürel) ----
+  const prng = (seed0) => { let s = seed0; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
+  const canvasTex = (w, h, draw, { srgb = true, repeat = null } = {}) => {
     const c = document.createElement('canvas');
-    c.width = 64; c.height = 256;
-    const x = c.getContext('2d');
-    const bands = [['#5A4232', 0], ['#6E5038', 0.12], ['#7B5C3E', 0.3], ['#8A6A48', 0.52], ['#6B5544', 0.74], ['#59483C', 1]];
-    const g = x.createLinearGradient(0, 0, 0, 256);
-    for (const [cl, t] of bands) g.addColorStop(t, cl);
-    x.fillStyle = g; x.fillRect(0, 0, 64, 256);
-    let s = 3; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    for (let i = 0; i < 900; i++) {
-      x.fillStyle = r() > 0.5 ? 'rgba(255,235,200,0.08)' : 'rgba(20,12,6,0.12)';
-      x.fillRect(Math.floor(r() * 64), Math.floor(r() * 256), 2, 1 + Math.floor(r() * 2));
-    }
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
     const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(10, 1);
+    t.anisotropy = maxAniso;
+    if (repeat) t.repeat.set(repeat[0], repeat[1]);
     return t;
-  })();
+  };
+
+  // Kazı kesiti: üstte koyu bitkisel toprak, altta kil/kum katmanları, taşlar; tabana doğru ortam gölgesi (AO)
+  const strataTex = canvasTex(256, 512, (x, w, h) => {
+    const r = prng(5);
+    const layers = [[0, '#3E3026'], [0.07, '#54402F'], [0.2, '#7A5E44'], [0.42, '#8E7254'], [0.6, '#76604C'], [0.8, '#8A7A66'], [1, '#6E6052']];
+    for (let i = 0; i < layers.length - 1; i++) {
+      const [ta, ca] = layers[i], [tb] = layers[i + 1];
+      x.fillStyle = ca;
+      x.beginPath();
+      x.moveTo(0, ta * h);
+      for (let px = 0; px <= w; px += 16) x.lineTo(px, ta * h + Math.sin(px * 0.05 + i) * 6 + (r() - 0.5) * 6);
+      x.lineTo(w, tb * h + 8); x.lineTo(0, tb * h + 8); x.closePath(); x.fill();
+    }
+    for (let i = 0; i < 5000; i++) {
+      x.fillStyle = r() > 0.5 ? `rgba(255,236,205,${0.04 + r() * 0.06})` : `rgba(18,12,6,${0.06 + r() * 0.1})`;
+      x.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2);
+    }
+    for (let i = 0; i < 70; i++) { // çakıl / taşlar
+      const sx = r() * w, sy = h * (0.2 + r() * 0.75), rr = 1.5 + r() * 4;
+      x.fillStyle = `rgba(${150 + r() * 60},${140 + r() * 50},${120 + r() * 40},0.85)`;
+      x.beginPath(); x.ellipse(sx, sy, rr * 1.3, rr, r() * 3, 0, Math.PI * 2); x.fill();
+    }
+    for (let i = 0; i < 40; i++) { // kepçe dişi izleri (dikey)
+      const sx = r() * w;
+      x.strokeStyle = 'rgba(20,14,8,0.18)'; x.lineWidth = 1 + r() * 2;
+      x.beginPath(); x.moveTo(sx, h * 0.1); x.lineTo(sx + (r() - 0.5) * 8, h * (0.4 + r() * 0.5)); x.stroke();
+    }
+    const ao = x.createLinearGradient(0, h * 0.55, 0, h);
+    ao.addColorStop(0, 'rgba(0,0,0,0)'); ao.addColorStop(1, 'rgba(10,6,4,0.55)');
+    x.fillStyle = ao; x.fillRect(0, 0, w, h);
+  }, { repeat: [8, 1] });
+
+  // Şantiye zemini: sıkıştırılmış toprak + mıcır, lastik izleri, su birikintileri
+  const dirtTex = canvasTex(512, 512, (x, w, h) => {
+    const r = prng(9);
+    x.fillStyle = '#6F5D4A'; x.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) {
+      const cx = r() * w, cy = r() * h, rr = 10 + r() * 50;
+      const g = x.createRadialGradient(cx, cy, 1, cx, cy, rr);
+      const c = r() > 0.5 ? '120,104,86' : '78,64,50';
+      g.addColorStop(0, `rgba(${c},0.35)`); g.addColorStop(1, `rgba(${c},0)`);
+      x.fillStyle = g; x.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
+    }
+    for (let i = 0; i < 9000; i++) {
+      const v = 90 + r() * 110;
+      x.fillStyle = `rgba(${v},${v - 8},${v - 18},${0.35 + r() * 0.4})`;
+      x.fillRect(r() * w, r() * h, 1 + r() * 1.6, 1 + r() * 1.6);
+    }
+    for (let k = 0; k < 3; k++) { // lastik izleri (çift iz, kıvrımlı)
+      const y0 = r() * h, amp = 30 + r() * 60, ph = r() * 6;
+      for (const off of [0, 26]) {
+        x.strokeStyle = 'rgba(40,30,22,0.38)'; x.lineWidth = 9;
+        x.setLineDash([3, 3]);
+        x.beginPath();
+        for (let px = -10; px <= w + 10; px += 8) x.lineTo(px, y0 + off + Math.sin(px / w * 6.28 + ph) * amp);
+        x.stroke();
+      }
+    }
+    x.setLineDash([]);
+    for (let i = 0; i < 4; i++) { // su birikintileri
+      const cx = r() * w, cy = r() * h;
+      x.fillStyle = 'rgba(46,44,48,0.55)';
+      x.beginPath(); x.ellipse(cx, cy, 16 + r() * 26, 8 + r() * 12, r() * 3, 0, Math.PI * 2); x.fill();
+    }
+  }, { repeat: [5, 4] });
+
+  // Brüt beton: gözenekler, lekeler, kalıp izleri
+  const concreteDraw = (x, w, h) => {
+    const r = prng(13);
+    x.fillStyle = '#A8A59E'; x.fillRect(0, 0, w, h);
+    for (let i = 0; i < 120; i++) {
+      const cx = r() * w, cy = r() * h, rr = 8 + r() * 40;
+      const g = x.createRadialGradient(cx, cy, 1, cx, cy, rr);
+      const c = r() > 0.5 ? '190,186,178' : '120,116,108';
+      g.addColorStop(0, `rgba(${c},0.25)`); g.addColorStop(1, `rgba(${c},0)`);
+      x.fillStyle = g; x.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
+    }
+    for (let i = 0; i < 2600; i++) {
+      x.fillStyle = `rgba(40,38,34,${0.12 + r() * 0.3})`;
+      x.fillRect(r() * w, r() * h, 1 + r(), 1 + r());
+    }
+    x.strokeStyle = 'rgba(70,68,62,0.25)'; x.lineWidth = 1;
+    for (let y = 0; y <= h; y += h / 4) { x.beginPath(); x.moveTo(0, y); x.lineTo(w, y); x.stroke(); }
+    x.fillStyle = 'rgba(50,48,44,0.45)';
+    for (let y = h / 8; y < h; y += h / 4) for (let xx = w / 8; xx < w; xx += w / 4) { x.beginPath(); x.arc(xx, y, 1.6, 0, 6.29); x.fill(); }
+  };
+  const concreteTex = canvasTex(256, 256, concreteDraw);
+  const raftTex = canvasTex(256, 256, concreteDraw, { repeat: [6, 6] });
+
+  // Kule vinç kafes dokusu (şeffaf arka plan + X çaprazlar)
+  const latticeTex = canvasTex(64, 64, (x, w, h) => {
+    x.clearRect(0, 0, w, h);
+    x.strokeStyle = '#fff'; x.lineWidth = 5;
+    x.strokeRect(2.5, 2.5, w - 5, h - 5);
+    x.lineWidth = 3;
+    x.beginPath(); x.moveTo(0, 0); x.lineTo(w, h); x.moveTo(w, 0); x.lineTo(0, h); x.stroke();
+  }, { srgb: false });
+
+  // Şantiye çiti (hoarding) — antrasit panel, altın şerit, kurumsal yazı
+  const fenceTex = canvasTex(1024, 192, (x, w, h) => {
+    x.fillStyle = '#25282C'; x.fillRect(0, 0, w, h);
+    const g = x.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(255,255,255,0.05)'); g.addColorStop(1, 'rgba(0,0,0,0.25)');
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    x.fillStyle = '#C8963A'; x.fillRect(0, h - 22, w, 6); x.fillRect(0, 10, w, 3);
+    x.fillStyle = 'rgba(0,0,0,0.35)';
+    for (let px = 0; px < w; px += 128) x.fillRect(px, 0, 2, h);
+    x.font = '500 46px "Jost", sans-serif';
+    if ('letterSpacing' in x) x.letterSpacing = '8px';
+    x.fillStyle = '#E9D7AE';
+    x.textBaseline = 'middle';
+    x.fillText('FETSAN GRUP', 40, h * 0.46);
+    x.font = '400 30px "Jost", sans-serif';
+    x.fillStyle = 'rgba(255,255,255,0.7)';
+    x.fillText('DEFNE EVLERİ  ·  ŞANTİYE ALANI', 470, h * 0.48);
+  });
+
+
 
   const FM = {
     pit: new THREE.MeshStandardMaterial({ map: strataTex, roughness: 0.95, side: THREE.BackSide }),
-    concrete: new THREE.MeshStandardMaterial({ color: 0xA9A69F, roughness: 0.82 }),
-    freshConcrete: new THREE.MeshStandardMaterial({ color: 0x8E8C87, roughness: 0.3 }),
-    lean: new THREE.MeshStandardMaterial({ color: 0xBDB8AE, roughness: 0.9 }),
+    concrete: new THREE.MeshStandardMaterial({ map: concreteTex, bumpMap: concreteTex, bumpScale: 0.6, color: 0xE2DFD8, roughness: 0.86 }),
+    freshConcrete: new THREE.MeshStandardMaterial({ map: raftTex, bumpMap: raftTex, bumpScale: 0.3, color: 0x8E8C87, roughness: 0.3 }),
+    lean: new THREE.MeshStandardMaterial({ map: raftTex, color: 0xCFCAC0, roughness: 0.95 }),
     membrane: new THREE.MeshStandardMaterial({ color: 0x1F2329, roughness: 0.38, metalness: 0.15 }),
-    rebar: new THREE.MeshStandardMaterial({ color: 0x8A4A26, roughness: 0.55, metalness: 0.55 }),
+    rebar: new THREE.MeshStandardMaterial({ color: 0x6E3A1E, roughness: 0.62, metalness: 0.6 }),
     steel: new THREE.MeshStandardMaterial({ color: 0x3C4248, roughness: 0.45, metalness: 0.7 }),
     rig: new THREE.MeshStandardMaterial({ color: 0xE0A21C, roughness: 0.5, metalness: 0.2 }),
     mask: new THREE.MeshBasicMaterial({
@@ -960,8 +1072,292 @@ export async function createCity(host, { mobile = false }) {
     const slabM = shadow(new THREE.Mesh(new THREE.BoxGeometry(PW + 0.2, 1.0, PD + 0.2).translate(0, -0.5, 0), M.whiteStone));
     g.add(slabM);
 
-    return { blk, mask, pit, shoring, piles, starters, rig, lean, memFloor, memWalls, rebar, raft, walls, slabM, pilePts };
+    return { g, blk, mask, pit, shoring, piles, starters, rig, lean, memFloor, memWalls, rebar, raft, walls, slabM, pilePts };
   });
+
+  // ---- Şantiye: zemin, çukur tabanı, kazı kenarı gölgesi, çit, konteyner ofisler, malzeme, vinç, iş makineleri ----
+  const SM = {
+    dirt: new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.97, transparent: true, opacity: 0 }),
+    pitFloor: new THREE.MeshStandardMaterial({ map: dirtTex, color: 0x8E8070, roughness: 1 }),
+    spoil: new THREE.MeshStandardMaterial({ color: 0x5E4D3C, roughness: 1 }),
+    fence: new THREE.MeshStandardMaterial({ map: fenceTex, roughness: 0.55, metalness: 0.25 }),
+    lattice: new THREE.MeshStandardMaterial({ color: 0xE0A21C, map: latticeTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.35 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x1F2124, roughness: 0.85 }),
+    tyre: new THREE.MeshStandardMaterial({ color: 0x151617, roughness: 0.95 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x2A3644, roughness: 0.08, metalness: 0.9 }),
+    white: new THREE.MeshStandardMaterial({ color: 0xE9E7E2, roughness: 0.55, metalness: 0.15 }),
+    cabin: new THREE.MeshStandardMaterial({ color: 0xD6D3CB, roughness: 0.6, metalness: 0.3 }),
+    ply: new THREE.MeshStandardMaterial({ color: 0xC39A62, roughness: 0.85 }),
+    red: new THREE.MeshStandardMaterial({ color: 0xB8322A, roughness: 0.5, metalness: 0.2 }),
+  };
+  for (const m of [SM.dirt]) {
+    m.stencilWrite = true; m.stencilRef = 1;
+    m.stencilFunc = THREE.NotEqualStencilFunc;
+    m.stencilZPass = THREE.KeepStencilOp; m.stencilFail = THREE.KeepStencilOp;
+  }
+  const sh = (m, cast = true) => { m.castShadow = cast && !mobile; m.receiveShadow = !mobile; return m; };
+  const BM = (list, mat, cast = true) => sh(new THREE.Mesh(mergeBoxes(list), mat), cast);
+  const wheel = (r, wdt) => new THREE.CylinderGeometry(r, r, wdt, 14).rotateX(Math.PI / 2);
+
+  // Şantiye zemini (arazi boyunca toprak/mıcır; çim yalnızca peyzajda gelir)
+  const dirt = new THREE.Mesh(new THREE.PlaneGeometry(PLOT_X * 2, PLOT_Z * 2).rotateX(-Math.PI / 2), SM.dirt);
+  dirt.position.set(CX, 0.025, CZ);
+  dirt.receiveShadow = !mobile;
+  scene.add(dirt);
+
+  for (const F of fnd) {
+    // Çukur tabanı (kazıyla birlikte iner)
+    F.floor = new THREE.Mesh(new THREE.PlaneGeometry(PW - 0.2, PD - 0.2).rotateX(-Math.PI / 2), SM.pitFloor);
+    F.floor.receiveShadow = !mobile;
+    F.g.add(F.floor);
+    // Kazı kenarı: zemin seviyesindeki dudak — alçak güneşte çukur duvarına gerçek gölge düşürür
+    const o = 0.06, t = 2.2;
+    F.lip = BM([
+      { w: PW + 2 * (o + t), h: 0.6, d: t, y: -0.3, z: PD / 2 + o + t / 2 },
+      { w: PW + 2 * (o + t), h: 0.6, d: t, y: -0.3, z: -(PD / 2 + o + t / 2) },
+      { w: t, h: 0.6, d: PD, y: -0.3, x: PW / 2 + o + t / 2 },
+      { w: t, h: 0.6, d: PD, y: -0.3, x: -(PW / 2 + o + t / 2) },
+    ], SM.spoil);
+    F.g.add(F.lip);
+    // Kazı fazında çukur kenarında toprak yığını (kazı fazlası)
+    const pile = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, color: 0xB09A84 }));
+    pile.scale.set(4.5, 2.6, 3.2);
+    pile.position.set(PW / 2 + 5, 0, -PD / 2 + 4);
+    sh(pile);
+    F.spoilHeap = pile;
+    F.g.add(pile);
+  }
+
+  // Şantiye çiti: parsel çevresinde 2.4 m panel, +Z cephesinde araç kapısı
+  const site = new THREE.Group();
+  scene.add(site);
+  const fenceH = 2.4;
+  const fx0 = CX - PLOT_X, fx1 = CX + PLOT_X, fz0 = CZ - PLOT_Z, fz1 = CZ + PLOT_Z;
+  const gate0 = 3, gate1 = 13;
+  const fenceSegs = [
+    [fx0, fz1, gate0, fz1], [gate1, fz1, fx1, fz1], [fx0, fz0, fx1, fz0], [fx0, fz0, fx0, fz1], [fx1, fz0, fx1, fz1],
+  ];
+  const fenceBoxes = [], postBoxes = [];
+  for (const [ax, az, bx, bz] of fenceSegs) {
+    const len = Math.hypot(bx - ax, bz - az);
+    const alongX = Math.abs(bx - ax) > Math.abs(bz - az);
+    fenceBoxes.push(alongX
+      ? { w: len, h: fenceH, d: 0.08, x: (ax + bx) / 2, y: fenceH / 2 + 0.1, z: az, uvScaleX: len / 12, uvScaleY: 1 }
+      : { w: 0.08, h: fenceH, d: len, x: ax, y: fenceH / 2 + 0.1, z: (az + bz) / 2, uvScaleX: len / 12, uvScaleY: 1 });
+    const n = Math.max(1, Math.round(len / 3));
+    for (let k = 0; k <= n; k++) {
+      const px = ax + ((bx - ax) * k) / n, pz = az + ((bz - az) * k) / n;
+      postBoxes.push({ w: 0.12, h: fenceH + 0.2, d: 0.12, x: px, y: (fenceH + 0.2) / 2, z: pz });
+    }
+  }
+  const fence = new THREE.Group();
+  fence.add(BM(fenceBoxes, SM.fence), BM(postBoxes, SM.dark));
+  site.add(fence);
+
+  // Konteyner şantiye ofisleri (2 + 1 üst kat, merdiven) ve malzeme stokları
+  const cabins = new THREE.Group();
+  const cabinBox = (x, y, z, rot) => {
+    const g = new THREE.Group();
+    g.add(
+      BM([{ w: 6.0, h: 2.6, d: 2.45, y: 1.3 }], SM.cabin),
+      BM([{ w: 6.1, h: 0.18, d: 2.55, y: 2.65 }, { w: 6.1, h: 0.18, d: 2.55, y: 0.09 }], SM.dark),
+      BM([{ w: 1.2, h: 0.9, d: 0.05, x: -1.6, y: 1.6, z: 1.24 }, { w: 1.2, h: 0.9, d: 0.05, x: 1.0, y: 1.6, z: 1.24 }, { w: 0.9, h: 2.0, d: 0.05, x: 2.4, y: 1.1, z: 1.24 }], SM.glass, false),
+    );
+    g.position.set(x, y, z); g.rotation.y = rot;
+    cabins.add(g);
+  };
+  const CBX = 21.5, CBZ = -15.5;
+  cabinBox(CBX, 0, CBZ, 0); cabinBox(CBX, 0, CBZ + 2.9, 0); cabinBox(CBX, 2.72, CBZ, 0);
+  cabins.add(BM([{ w: 0.08, h: 1.0, d: 2.5, x: CBX + 3.1, y: 3.4, z: CBZ + 1.6 }, { w: 6.2, h: 1.0, d: 0.06, x: CBX, y: 3.4, z: CBZ + 1.25 }], SM.red, false));
+  site.add(cabins);
+
+  const stock = new THREE.Group();
+  const rebarBundles = [];
+  for (let k = 0; k < 3; k++) for (let b = 0; b < 4; b++) rebarBundles.push({ w: 12, h: 0.32, d: 0.5, x: -27, y: 0.3 + k * 0.34, z: 9 + b * 0.62 });
+  const sleepers = [-32, -27, -22].map((xx) => ({ w: 0.25, h: 0.15, d: 3.2, x: xx, y: 0.08, z: 10 }));
+  const plyStacks = [];
+  for (let i = 0; i < 3; i++) plyStacks.push({ w: 2.44, h: 0.9 + i * 0.2, d: 1.22, x: -31 + i * 2.8, y: (0.9 + i * 0.2) / 2 + 0.12, z: 15.5 });
+  stock.add(BM(rebarBundles, FM.rebar), BM(sleepers, SM.ply), BM(plyStacks, SM.ply));
+  site.add(stock);
+
+  // ---- Kule vinç (tepe dönerli, arabalı) ----
+  const CR_H = 50, JIB = 44, CJIB = 13;
+  const crane = new THREE.Group();
+  crane.position.set(21, 0, -25.5); // parselin arka köşesi: kamera turunda çukuru kapatmaz
+  const craneBase = BM([{ w: 6, h: 1.2, d: 6, y: 0.6 }], FM.concrete);
+  const mast = sh(new THREE.Mesh(mergeBoxes([{ w: 2, h: CR_H, d: 2, y: CR_H / 2, uvScaleX: 1, uvScaleY: CR_H / 2 }]), SM.lattice));
+  const slew = new THREE.Group();
+  slew.position.y = CR_H;
+  slew.add(
+    sh(new THREE.Mesh(mergeBoxes([{ w: JIB, h: 1.7, d: 1.7, x: JIB / 2 + 1, y: 1.0, uvScaleX: JIB / 1.7, uvScaleY: 1 }]), SM.lattice)),
+    sh(new THREE.Mesh(mergeBoxes([{ w: CJIB, h: 1.2, d: 1.9, x: -CJIB / 2 - 1, y: 0.8, uvScaleX: CJIB / 1.6, uvScaleY: 1 }]), SM.lattice)),
+    sh(new THREE.Mesh(mergeBoxes([{ w: 1.6, h: 9, d: 1.6, y: 6.3, uvScaleX: 1, uvScaleY: 9 / 1.6 }]), SM.lattice)),
+    BM([{ w: 2.4, h: 3.2, d: 2.2, x: -CJIB + 1.5, y: -0.7 }, { w: 2.4, h: 3.2, d: 2.2, x: -CJIB + 4.0, y: -0.7 }], FM.concrete),
+    BM([{ w: 2.4, h: 1.0, d: 2.4, y: -0.1 }], SM.dark),
+    BM([{ w: 1.8, h: 2.0, d: 1.6, x: 1.6, y: -1.0, z: 1.4 }], FM.rig),
+    BM([{ w: 1.82, h: 1.1, d: 1.62, x: 1.62, y: -0.8, z: 1.4 }], SM.glass, false),
+  );
+  // Askı halatları (kule tepesi → bom ve karşı bom)
+  const pend = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 10.8, 0), new THREE.Vector3(JIB * 0.55, 1.9, 0),
+    new THREE.Vector3(0, 10.8, 0), new THREE.Vector3(JIB * 0.95, 1.9, 0),
+    new THREE.Vector3(0, 10.8, 0), new THREE.Vector3(-CJIB, 1.5, 0),
+  ]), new THREE.LineBasicMaterial({ color: 0x2A2A2A }));
+  slew.add(pend);
+  const trolley = new THREE.Group();
+  trolley.add(BM([{ w: 1.4, h: 0.5, d: 1.9, y: -0.1 }], SM.dark));
+  const hookLine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1, 0.06).translate(0, -0.5, 0), SM.dark);
+  const hook = new THREE.Group();
+  hook.add(BM([{ w: 0.7, h: 1.0, d: 0.5 }], FM.rig), BM([{ w: 3.8, h: 0.4, d: 0.5, y: -1.6 }], FM.rebar)); // kanca + taşınan donatı demeti
+  trolley.add(hookLine, hook);
+  slew.add(trolley);
+  crane.add(craneBase, mast, slew);
+  scene.add(crane);
+
+  // ---- Paletli ekskavatör (her çukurda bir tane) ----
+  function makeExcavator() {
+    const g = new THREE.Group();
+    g.add(BM([{ w: 4.6, h: 0.9, d: 0.8, y: 0.45, z: 1.15 }, { w: 4.6, h: 0.9, d: 0.8, y: 0.45, z: -1.15 }, { w: 2.6, h: 0.5, d: 1.6, y: 0.9 }], SM.dark));
+    const upper = new THREE.Group();
+    upper.position.y = 1.15;
+    upper.add(
+      BM([{ w: 3.4, h: 1.15, d: 2.6, x: -0.5, y: 0.58 }, { w: 0.9, h: 1.0, d: 2.6, x: -2.2, y: 0.6 }], FM.rig),
+      BM([{ w: 1.2, h: 1.7, d: 1.0, x: 0.6, y: 2.0, z: 0.75 }], FM.rig),
+      BM([{ w: 1.22, h: 1.0, d: 1.02, x: 0.62, y: 2.2, z: 0.75 }], SM.glass, false),
+    );
+    const boom = new THREE.Group();
+    boom.position.set(1.0, 1.2, -0.3);
+    boom.add(sh(new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.55, 0.5).translate(2.6, 0, 0), FM.rig)));
+    const arm = new THREE.Group();
+    arm.position.x = 5.2;
+    arm.add(sh(new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.42, 0.4).translate(1.7, 0, 0), FM.rig)));
+    const bucket = sh(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 1.2), SM.dark));
+    bucket.position.x = 3.6;
+    arm.add(bucket);
+    boom.add(arm);
+    upper.add(boom);
+    g.add(upper);
+    g.userData = { upper, boom, arm };
+    return g;
+  }
+
+  // ---- Kamyonlar: damperli, transmikser, beton pompası ----
+  function makeTruck(kind) {
+    const g = new THREE.Group();
+    g.add(BM([{ w: 8.2, h: 0.5, d: 2.3, y: 1.05 }], SM.dark));
+    g.add(BM([{ w: 2.0, h: 2.2, d: 2.4, x: 3.1, y: 2.2 }], kind === 'dump' ? FM.rig : SM.white));
+    g.add(BM([{ w: 0.05, h: 0.9, d: 2.0, x: 4.12, y: 2.6 }], SM.glass, false));
+    const wg = wheel(0.55, 0.45);
+    for (const wx of [2.9, -1.4, -2.6]) for (const wz of [-1.05, 1.05]) {
+      const m = sh(new THREE.Mesh(wg, SM.tyre)); m.position.set(wx, 0.55, wz); g.add(m);
+    }
+    if (kind === 'dump') {
+      g.add(BM([{ w: 5.0, h: 1.5, d: 2.5, x: -1.2, y: 2.05 }], FM.rig));
+      const load = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1 }));
+      load.scale.set(2.3, 0.7, 1.1); load.position.set(-1.2, 2.75, 0);
+      g.add(load);
+    } else if (kind === 'mixer') {
+      const drum = sh(new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.25, 4.6, 18).rotateZ(Math.PI / 2 - 0.22), SM.white));
+      drum.position.set(-1.0, 2.6, 0);
+      g.add(drum);
+      g.userData.drum = drum;
+    } else if (kind === 'pump') {
+      const turret = BM([{ w: 1.2, h: 1.2, d: 1.2, x: 0.6, y: 1.9 }], SM.white);
+      g.add(turret);
+      // Katlanır beton pompası bomu (3 bölüm) — çukurun üzerine uzanır
+      const segs = [];
+      let parent = new THREE.Group();
+      parent.position.set(0.6, 2.6, 0);
+      g.add(parent);
+      for (const [len, rz] of [[11, 0.95], [10, -1.35], [9, -0.75]]) {
+        const piv = new THREE.Group();
+        piv.rotation.z = rz;
+        piv.add(sh(new THREE.Mesh(new THREE.BoxGeometry(len, 0.42, 0.42).translate(len / 2, 0, 0), SM.white)));
+        parent.add(piv);
+        segs.push(piv);
+        const next = new THREE.Group(); next.position.x = len; piv.add(next); parent = next;
+      }
+      const hose = sh(new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 3.5, 8).translate(0, -1.75, 0), SM.dark));
+      parent.add(hose);
+      g.userData.segs = segs;
+      g.userData.hose = hose;
+      g.add(BM([{ w: 0.5, h: 0.3, d: 5.6, x: 1.5, y: 0.35 }, { w: 0.5, h: 0.3, d: 5.6, x: -2.4, y: 0.35 }], SM.red)); // destek ayakları
+    }
+    return g;
+  }
+
+  const A0 = fnd[0];
+  for (const F of fnd) {
+    F.exc = makeExcavator();
+    F.exc.position.set(3, 0, 2.5);
+    F.g.add(F.exc);
+    F.dump = makeTruck('dump');
+    F.dump.position.set(F === A0 ? 7 : -6, 0, PD / 2 + 3.3);
+    F.g.add(F.dump);
+  }
+  const pump = makeTruck('pump');
+  pump.rotation.y = Math.PI;                  // bom -X yönüne, çukura doğru
+  pump.position.set(PW / 2 + 3.6, 0, 1.5);
+  A0.g.add(pump);
+  const mixer = makeTruck('mixer');
+  mixer.rotation.y = Math.PI / 2;
+  mixer.position.set(PW / 2 + 3.4, 0, -8.5);
+  A0.g.add(mixer);
+
+  const hideAll = (...objs) => objs.forEach((o) => { o.visible = false; });
+  hideAll(dirt, site, crane, pump, mixer);
+
+  function applySite(p, dig) {
+    // Zemin: arazi fazında toprak belirir; peyzaj (çim) yapı bitince gelir
+    SM.dirt.opacity = smooth((p + 0.02) / 0.08);
+    dirt.visible = SM.dirt.opacity > 0.01;
+    const siteOn = smooth((p - 0.3) / 0.025) * (1 - smooth((p - 0.83) / 0.025));
+    site.visible = siteOn > 0.01;
+    fence.scale.y = Math.max(0.001, siteOn);
+    cabins.position.y = (1 - siteOn) * -6;
+    stock.visible = p < 0.8;
+
+    // Vinç: temelle birlikte kurulur, yapı boyunca çalışır, peyzajdan önce sökülür
+    const cr = smooth((p - 0.33) / 0.03) * (1 - smooth((p - 0.82) / 0.03));
+    crane.visible = cr > 0.01;
+    mast.scale.y = Math.max(0.001, cr);
+    slew.position.y = CR_H * cr;
+    slew.visible = cr > 0.98;
+    slew.rotation.y = -0.4 + Math.sin(p * 18) * 0.9 + p * 2.2;
+    const reach = 16 + 14 * (0.5 + 0.5 * Math.sin(p * 41));
+    trolley.position.x = reach;
+    const drop = 22 + 14 * (0.5 + 0.5 * Math.sin(p * 57 + 1));
+    hookLine.scale.y = drop;
+    hook.position.y = -drop - 0.5;
+
+    const floorY = -DEPTH * dig;
+    const digging = dig > 0.001 && dig < 0.999;
+    for (const F of fnd) {
+      const open = F.pit.visible;
+      F.floor.visible = open;
+      F.floor.position.y = floorY + 0.02;
+      F.lip.visible = open;
+      F.spoilHeap.visible = open && p < 0.43;
+      F.spoilHeap.scale.y = 2.6 * smooth(dig * 1.4);
+      F.exc.visible = digging || (dig >= 0.999 && p < FT.dig[1] + 0.006);
+      F.exc.position.y = floorY;
+      const ud = F.exc.userData;
+      ud.upper.rotation.y = Math.sin(p * 260) * 1.1;
+      ud.boom.rotation.z = 0.45 + 0.3 * Math.sin(p * 380);
+      ud.arm.rotation.z = -1.45 + 0.45 * Math.sin(p * 380 + 1.3);
+      F.dump.visible = open && p < FT.dig[1] + 0.008;
+    }
+    // Transmikser grobeton ve radye boyunca; pompa yalnızca radye dökümünde
+    mixer.visible = (p > FT.lean[0] - 0.004 && p < FT.lean[1]) || (p > FT.raft[0] - 0.006 && p < FT.raft[1] + 0.004);
+    if (mixer.userData.drum) mixer.userData.drum.rotation.x = p * 600;
+    const pumpT = smooth((p - FT.raft[0] + 0.006) / 0.006) * (1 - smooth((p - FT.raft[1]) / 0.006));
+    pump.visible = pumpT > 0.01;
+    const segs = pump.userData.segs;
+    segs[0].rotation.z = lerp(0.1, 0.95, pumpT);
+    segs[1].rotation.z = lerp(-2.9, -1.35, pumpT);
+    segs[2].rotation.z = lerp(-0.2, -0.75, pumpT) + Math.sin(p * 700) * 0.05;
+  }
+
 
   // Adım zaman pencereleri (scroll ilerlemesi)
   const FT = {
@@ -1085,7 +1481,7 @@ export async function createCity(host, { mobile = false }) {
       F.slabM.position.y = lerp(-1.2, 0, slabT);
     }
     FM.freshConcrete.roughness = lerp(0.25, 0.8, smooth(win(p, [0.47, 0.5])));
-    FM.freshConcrete.color.setHex(0x8E8C87).lerp(new THREE.Color(0xA9A69F), smooth(win(p, [0.47, 0.5])));
+    FM.freshConcrete.color.setHex(0x8E8C87).lerp(new THREE.Color(0xD8D5CE), smooth(win(p, [0.47, 0.5])));
 
     // Etiketler: her adım kendi penceresinde görünür
     STEPS.forEach((stp, i) => {
@@ -1096,6 +1492,7 @@ export async function createCity(host, { mobile = false }) {
       labelOpacity[i] = o;
       labels[i].bar.style.width = (clamp01((p - w[0]) / len) * 100).toFixed(1) + '%';
     });
+    applySite(p, dig);
     return slabT;
   }
 
@@ -1684,14 +2081,14 @@ export async function createCity(host, { mobile = false }) {
     const plotT = clamp01((p + 0.025) / 0.085);
     strips.children.forEach((s, i) => { s.scale.x = Math.max(0.0001, easeOut(plotT * 4 - i)); });
     stakes.children.forEach((s, i) => { s.scale.y = Math.max(0.001, easeOut(plotT * 4 - i + 0.4)); });
-    M.soil.opacity = 0.96 * smooth((p + 0.02) / 0.08);
+    M.soil.opacity = 0.96 * smooth((p - 0.8) / 0.05); // peyzaj çimi yapı bitince
 
     // 2. 360° Çizim (Tel kafes)
     const wireT = smooth((p - 0.14) / 0.16);
     wireGeo.setDrawRange(0, Math.floor(wireT * wireTotal / 2) * 2);
     // Temel fazında çizim soluklaşır, kazı ve donatı net okunur
-    const fndDim = smooth((p - 0.33) / 0.03) * (1 - smooth((p - 0.5) / 0.04));
-    M.blueprint.opacity = 0.72 * (1 - 0.72 * fndDim) * (1 - smooth((p - 0.74) / 0.12));
+    const fndDim = smooth((p - 0.312) / 0.02) * (1 - smooth((p - 0.5) / 0.04));
+    M.blueprint.opacity = 0.72 * (1 - 0.82 * fndDim) * (1 - smooth((p - 0.74) / 0.12));
     wire.visible = wireT > 0 && M.blueprint.opacity > 0.01;
 
     // 3. Temel
@@ -1699,7 +2096,7 @@ export async function createCity(host, { mobile = false }) {
     const plinthT = easeOut(win(p, [0.508, 0.52]));
     slab.scale.y = Math.max(0.001, plinthT);
     slab.visible = plinthT > 0.001;
-    gardenWallGroup.visible = slabT > 0.5;
+    gardenWallGroup.visible = p > 0.83;
 
     // 4. Yapı (Her iki blokta kat kat yükselir)
     const b = clamp01((p - BUILD0) / BUILD_SPAN) * (N + 0.6);
