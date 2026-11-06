@@ -100,7 +100,7 @@ html.intro-lock body { touch-action: none; }
 .js .intro {
   display: block; position: fixed; inset: 0; z-index: 120;
   touch-action: none;
-  animation: intro-failsafe 0s linear 6s forwards;
+  animation: intro-failsafe 0s linear 14s forwards;
 }
 @keyframes intro-failsafe { to { visibility: hidden; pointer-events: none; } }
 .intro.is-done { display: none; }
@@ -113,23 +113,35 @@ html.intro-lock body { touch-action: none; }
   text-align: center; padding: 0 var(--gutter);
   will-change: transform, opacity;
 }
-.intro__name-wrap { position: relative; }
-.intro__label { font-size: 11px; font-weight: 500; letter-spacing: .46em; text-transform: uppercase; color: var(--platinum); margin-bottom: 24px; padding-left: .46em; will-change: transform, opacity; }
-.intro__name {
+/* Yıl sayacı (1956 → 2026) + yükleme çubuğu + Miras finali */
+.intro__label { position: absolute; top: calc(50% - min(19vw, 9.6rem) - 44px); left: 0; right: 0; font-size: 11px; font-weight: 500; letter-spacing: .46em; text-transform: uppercase; color: var(--platinum); padding-left: .46em; will-change: transform, opacity; }
+.intro__stage { position: relative; display: grid; place-items: center; width: 100%; }
+.intro__count, .intro__legacy { grid-area: 1 / 1; display: flex; flex-direction: column; align-items: center; will-change: transform, opacity; }
+.intro__year {
   font-family: var(--serif); font-weight: 500;
-  font-size: clamp(3.4rem, 15.5vw, 8.8rem);
-  line-height: 1.04; letter-spacing: -.01em;
+  font-size: clamp(5.2rem, 24vw, 15rem); line-height: .9; letter-spacing: -.02em;
+  font-variant-numeric: lining-nums tabular-nums; font-feature-settings: 'lnum' 1, 'tnum' 1;
   color: var(--white);
+  background: linear-gradient(180deg, #FFFFFF 0%, #EDE7DA 55%, #CDBF9F 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
-.intro__w { display: block; white-space: nowrap; padding: .04em .06em .14em; will-change: transform, opacity; backface-visibility: hidden; }
-.intro__w--i { font-style: italic; color: #EAE8E3; }
-.intro__role { margin-top: 28px; display: flex; flex-direction: column; gap: 10px; font-size: 11px; font-weight: 500; letter-spacing: .38em; text-transform: uppercase; color: rgba(255, 255, 255, .86); padding-left: .38em; will-change: transform, opacity; }
-.js .intro__label, .js .intro__w, .js .intro__role { opacity: 0; }
-.intro__sep { display: none; }
-@media (min-width: 768px) {
-  .intro__role { flex-direction: row; gap: 0; }
-  .intro__sep { display: inline; white-space: pre; }
+.intro__num { display: block; padding: 0 .04em .06em; }
+.intro__bar { display: flex; align-items: center; gap: 16px; margin-top: clamp(18px, 3vh, 30px); }
+.intro__bar-y { font-size: 10px; font-weight: 500; letter-spacing: .3em; color: rgba(255, 255, 255, .5); font-variant-numeric: tabular-nums; padding-left: .3em; }
+.intro__track { position: relative; display: block; width: clamp(150px, 26vw, 300px); height: 1px; background: rgba(255, 255, 255, .14); overflow: visible; }
+.intro__fill { position: absolute; inset: 0; transform: scaleX(0); transform-origin: 0 50%; background: linear-gradient(90deg, rgba(228, 225, 218, .6), #E9D3A0 70%, #F6E4B4); will-change: transform; }
+.intro__spark { position: absolute; top: -2px; left: 0; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: #F6E4B4; box-shadow: 0 0 10px 2px rgba(246, 228, 180, .55); text-decoration: none; will-change: transform; }
+.intro__legacy { pointer-events: none; }
+.intro__line { display: block; width: min(64vw, 760px); height: 1px; background: linear-gradient(90deg, rgba(201, 162, 90, 0) 0%, #C9A25A 22%, #F2DEAA 78%, rgba(242, 222, 170, 0) 100%); transform: scaleX(0); transform-origin: 0 50%; will-change: transform; order: 2; margin: clamp(10px, 2vh, 18px) 0; }
+.intro__miras {
+  order: 1; display: flex; overflow: hidden; padding: .06em .1em .16em;
+  font-family: var(--serif); font-weight: 500; font-style: italic;
+  font-size: clamp(4.4rem, 17vw, 11rem); line-height: 1; letter-spacing: .01em;
+  color: #F4EFE4;
 }
+.intro__m { display: inline-block; will-change: transform; transform: translateY(115%); }
+.intro__sub { order: 3; font-size: 11px; font-weight: 500; letter-spacing: .42em; text-transform: uppercase; color: rgba(255, 255, 255, .72); padding-left: .42em; will-change: transform, opacity; }
+.js .intro__label, .js .intro__count, .js .intro__sub { opacity: 0; }
 .intro__skip {
   position: absolute; right: var(--gutter); bottom: calc(24px + env(safe-area-inset-bottom));
   background: none; border: 0; padding: 12px 0; min-height: 44px;
@@ -137,8 +149,6 @@ html.intro-lock body { touch-action: none; }
   color: rgba(255, 255, 255, .45); cursor: pointer;
 }
 @media (min-width: 768px) {
-  .intro__name { display: flex; justify-content: center; gap: .26em; font-size: clamp(3.4rem, 7.6vw, 8.6rem); }
-  .intro__role { font-size: 11px; }
 }
 
 /* ---------- Cursor (yalnızca hassas işaretçi) ---------- */

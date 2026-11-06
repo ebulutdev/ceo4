@@ -76,9 +76,11 @@
     try { seen = sessionStorage.getItem('uf-intro') === '1'; sessionStorage.setItem('uf-intro', '1'); } catch (e) { /* gizli mod */ }
     scrollTo(0, 0);
     lenis.stop();
-    const words = $$('.intro__name .intro__w');
-    const k = seen ? 0.45 : 0.72;
+    const k = seen ? 0.55 : 1;
     let unlocked = false;
+    const numEl = $('.intro__num');
+    const yr = { v: 1956 };
+    let lastYear = 1956;
 
     function unlockScroll() {
       if (unlocked) return;
@@ -88,21 +90,40 @@
       lenis.start();
     }
 
+    // Sayfa (hero görseli + fontlar) hazır olana kadar sayaç sonunda kısa bekleme; en fazla 3.5 sn
+    let pageReady = d.readyState === 'complete';
+    const onReady = () => { pageReady = true; if (tl.paused() && waiting) { waiting = false; tl.resume(); } };
+    if (!pageReady) { addEventListener('load', onReady, { once: true }); setTimeout(onReady, 3500); }
+    let waiting = false;
+
     const tl = gsap.timeline({ onComplete: finish });
-    // Saf GPU transform + opacity: clip-path veya tam ekran canvas scale kullanılmaz, sıfır kare düşüşü.
-    tl.fromTo('.intro__label',
-        { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.65 * k, ease: 'power3.out' }, 0.04)
-      .fromTo(words,
-        { autoAlpha: 0, y: 24 },
-        { autoAlpha: 1, y: 0, duration: 0.85 * k, stagger: 0.14 * k, ease: 'power3.out' }, 0.12)
-      .fromTo('.intro__role',
-        { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.65 * k, ease: 'power3.out' }, `-=${0.52 * k}`)
-      .to(['.intro__content', '.intro__skip'],
-        { autoAlpha: 0, y: -12, duration: 0.36, ease: 'power2.in' }, `+=${0.28 * k}`)
-      .to('.intro__panel--l', { xPercent: -101, duration: 0.82, ease: 'expo.inOut', force3D: true }, '-=0.06')
-      .to('.intro__panel--r', { xPercent: 101, duration: 0.82, ease: 'expo.inOut', force3D: true }, '<')
+    // Yalnızca transform + opacity: GPU'da akıcı, yerleşim (layout) tetiklemez.
+    tl.fromTo('.intro__label', { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.6 * k, ease: 'power3.out' }, 0.05)
+      .fromTo('.intro__count', { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.7 * k, ease: 'power3.out' }, 0.1)
+      // 1956 → 2026: yavaş başlar, giderek hızlanır; yükleme çubuğu ve kıvılcım aynı eğriyle ilerler
+      .addLabel('count', 0.35 * k)
+      .to(yr, {
+        v: 2026, duration: 2.5 * k, ease: 'power3.in',
+        onUpdate() {
+          const y = Math.round(yr.v);
+          if (y !== lastYear) { lastYear = y; numEl.textContent = y; }
+        },
+      }, 'count')
+      .to('.intro__fill', { scaleX: 1, duration: 2.5 * k, ease: 'power3.in' }, 'count')
+      .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: 2.5 * k, ease: 'power3.in' }, 'count')
+      // Varış: 2026 hafifçe oturur
+      .fromTo('.intro__year', { scale: 1 }, { scale: 1.035, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 }, '>-0.02')
+      .addPause('>', () => { if (pageReady) requestAnimationFrame(() => tl.resume()); else waiting = true; })
+      // Sayaç yukarı çekilir, Miras sahnesi açılır
+      .to('.intro__count', { autoAlpha: 0, y: -34, duration: 0.55 * k, ease: 'power3.in' }, '+=0.25')
+      .to('.intro__label', { autoAlpha: 0, y: -10, duration: 0.45 * k, ease: 'power2.in' }, '<')
+      .to('.intro__line', { scaleX: 1, duration: 1.0 * k, ease: 'expo.inOut' }, '-=0.12')
+      .to('.intro__m', { y: 0, duration: 0.9 * k, stagger: 0.07 * k, ease: 'expo.out' }, '-=0.62')
+      .fromTo('.intro__sub', { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.6 * k, ease: 'power3.out' }, '-=0.6')
+      // Siteye geçiş: içerik yukarı süzülür, perdeler açılır
+      .to(['.intro__legacy', '.intro__skip'], { autoAlpha: 0, y: -16, duration: 0.45, ease: 'power2.in' }, `+=${0.55 * k}`)
+      .to('.intro__panel--l', { xPercent: -101, duration: 0.9, ease: 'expo.inOut', force3D: true }, '-=0.1')
+      .to('.intro__panel--r', { xPercent: 101, duration: 0.9, ease: 'expo.inOut', force3D: true }, '<')
       .add(unlockScroll, '<0.28')
       .to('.film__cue', { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<0.18')
       .to(header, { autoAlpha: 1, duration: 0.55, ease: 'power2.out' }, '<');
@@ -112,6 +133,7 @@
       if (skipped) return;
       skipped = true;
       tl.timeScale(3.8);
+      if (tl.paused()) { waiting = false; tl.resume(); }
       unlockScroll();
     };
     $('.intro__skip').addEventListener('click', skip, { once: true });
@@ -127,7 +149,7 @@
     }
   }
 
-  const fontList = ['500 1em "Cormorant Garamond"', 'italic 500 1em "Cormorant Garamond"', '400 1em Jost'];
+  const fontList = ['500 1em "Cormorant Garamond"', 'italic 500 1em "Cormorant Garamond"', '400 1em Jost', '500 1em Jost'];
   const fontsReady = d.fonts ? Promise.race([Promise.all(fontList.map((f) => d.fonts.load(f))), new Promise((r) => setTimeout(r, 350))]) : Promise.resolve();
   fontsReady.then(() => {
     ScrollTrigger.refresh();
