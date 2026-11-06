@@ -399,8 +399,10 @@ html.intro-lock body { touch-action: none; }
 .quotes__pin { position: relative; height: 100svh; min-height: 540px; display: flex; flex-direction: column; justify-content: center; padding: calc(78px + env(safe-area-inset-top)) 0 calc(40px + env(safe-area-inset-bottom)); }
 .quotes__stage { position: relative; margin-top: 28px; min-height: clamp(15rem, 42svh, 24rem); display: flex; align-items: center; }
 .quote { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); }
-.quote blockquote p { font-family: var(--serif); font-weight: 500; font-size: clamp(1.95rem, min(6.6vw, 7svh), 4.6rem); line-height: 1.1; letter-spacing: -.015em; max-width: 19ch; }
+.quote blockquote p { font-family: var(--serif); font-weight: 500; font-size: clamp(1.95rem, min(6.6vw, 7svh), 4.6rem); line-height: 1.1; letter-spacing: -.015em; max-width: 22ch; }
 .quote figcaption { margin-top: 22px; font-size: 11px; font-weight: 500; letter-spacing: .3em; text-transform: uppercase; color: var(--platinum); }
+.quote blockquote p em { font-style: italic; color: #E6D3A6; }
+.quote__role { display: block; margin-top: 8px; font-size: 10px; letter-spacing: .26em; color: rgba(228, 225, 218, .55); }
 .no-motion .quotes__pin { height: auto; padding: var(--section) var(--gutter); }
 .no-motion .quotes__stage { min-height: 0; height: auto; display: grid; gap: 64px; }
 .no-motion .quote { position: static; transform: none; }
