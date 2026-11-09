@@ -16,5 +16,6 @@ for (const f of files) {
 }
 // main.js kendi özetini, 3D modülü (city3d.js) ise v3d parametresiyle taşır
 html = html.replace(/(src=")js\/main\.js(\?[^"]*)?(")/, `$1js/main.js?v=${hash('js/main.js')}&amp;v3d=${hash('js/city3d.js')}$3`);
+html = html.replace(/(src=")js\/music\.js(\?[^"]*)?(")/, `$1js/music.js?v=${hash('js/music.js')}$3`);
 fs.writeFileSync(path.join(SITE, 'index.html'), html);
-console.log('Sürümler güncellendi:', [...files, 'js/main.js', 'js/city3d.js'].map((f) => `${f}=${hash(f)}`).join('  '));
+console.log('Sürümler güncellendi:', [...files, 'js/main.js', 'js/city3d.js', 'js/music.js'].map((f) => `${f}=${hash(f)}`).join('  '));

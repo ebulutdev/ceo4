@@ -1207,7 +1207,7 @@
     $$('.menu__list a', menu).forEach((a) => {
       a.addEventListener('mouseenter', () => {
         if (!preview || !a.dataset.img) return;
-        const src = `assets/img/${a.dataset.img}-1080.webp`;
+        const src = `assets/img/${a.dataset.img}-hd.webp`;
         if (preview.getAttribute('src') === src) return;
         if (!hasGsap || reduce) { preview.src = src; return; }
         gsap.to(preview, { autoAlpha: 0, duration: 0.25, onComplete: () => { preview.src = src; gsap.fromTo(preview, { scale: 1.08 }, { autoAlpha: 1, scale: 1, duration: 1.2 }); } });

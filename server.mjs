@@ -40,6 +40,7 @@ const TYPES = {
   '.txt': 'text/plain; charset=utf-8',
   '.xml': 'application/xml; charset=utf-8',
   '.mp4': 'video/mp4',
+  '.mp3': 'audio/mpeg',
 };
 
 const FIELD_LABELS = {
@@ -294,7 +295,7 @@ function requestHandler(req, res) {
   }
   const hit = resolve(req.url) || resolve('/index.html');
   const ext = extname(hit.file);
-  const isImmutableAsset = /^\/assets\/(film|fonts|vendor)\//.test(urlPath);
+  const isImmutableAsset = /^\/assets\/(film|fonts|vendor|audio)\//.test(urlPath);
   const headers = {
     'Content-Type': TYPES[ext] || 'application/octet-stream',
     'Accept-Ranges': 'bytes',
@@ -308,7 +309,7 @@ function requestHandler(req, res) {
     headers.Expires = '0';
   }
   const range = req.headers.range;
-  if (range && ext === '.mp4') {
+  if (range && (ext === '.mp4' || ext === '.mp3')) {
     const m = /^bytes=(\d*)-(\d*)$/.exec(range);
     if (m) {
       const start = m[1] ? parseInt(m[1], 10) : 0;
