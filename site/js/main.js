@@ -22,6 +22,22 @@
   const intro = $('.intro');
   // Açılış sinyalleri: sesleri music.js çalar; animasyon sesten bağımsız kalır
   const emitIntro = (name, detail) => { try { dispatchEvent(new CustomEvent('uf:intro-' + name, { detail })); } catch (e) {} };
+  // Sahne ses efekti sinyali (sesi music.js çalar). Sahne katlanırken gelen yapay ilerlemeler sessiz geçer.
+  let collapsingNow = () => false;
+  const sfx = (type, detail) => {
+    if (collapsingNow()) return;
+    try { dispatchEvent(new CustomEvent('uf:sfx', { detail: { type, ...(detail || {}) } })); } catch (e) {}
+  };
+  // Sabit sahne zaman çizelgesi belirli bir adıma geçtiğinde (ileri / geri) tek sinyal verir
+  function stepper(type, times) {
+    let cur = 0;
+    return function () {
+      const t = this.time();
+      let n = 0;
+      for (let i = 0; i < times.length; i++) if (t >= times[i]) n = i + 1;
+      if (n !== cur) { const dir = n > cur ? 1 : -1; cur = n; sfx(type, { i: n, dir }); }
+    };
+  }
 
   // ---------- Hareketsiz mod (reduced motion / kütüphane yok) ----------
   if (!hasGsap || reduce) {
@@ -59,6 +75,7 @@
   // Katlama sırasında sayfa önce kısalır, sonra kaydırma konumu düzeltilir. Bu ara anda sonraki sahneler
   // kendini yanlışlıkla 'geçilmiş' sanmasın diye tüm sahne olayları yok sayılır (zincirleme atlama hatası).
   let collapsing = false;
+  collapsingNow = () => collapsing;
   let collapseScheduled = false;
   const sceneChecks = []; // katlamadan sonra 'sonu geçilmiş ama bitmemiş' sahneleri tamamlar
   function queueCollapse(st) {
@@ -731,7 +748,8 @@
       }
     });
 
-    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false } });
+    const steps = chs.slice(1).map((_, i) => i + 1 - 0.33);
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false }, onUpdate: stepper('story', steps) });
     fwd(tl, {
       trigger: sec, start: 'top top',
       end: () => `+=${chs.length * 75}%`,
@@ -772,7 +790,8 @@
       }
     });
 
-    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false } });
+    const steps = items.slice(1).map((_, i) => i + 1 - 0.33);
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false }, onUpdate: stepper('lead', steps) });
     fwd(tl, {
       trigger: sec, start: 'top top',
       end: () => `+=${items.length * 65}%`,
@@ -815,6 +834,7 @@
       const prev = phase;
       const dir = n > prev ? 1 : -1;
       phase = n;
+      sfx('city', { i: n, dir });
 
       // Hızlı kaydırmada ara fazların ekranda asılı kalmasını engelle
       words.forEach((w, i) => {
@@ -910,7 +930,7 @@
       const mid = viewport.clientWidth / 2 - x;
       let best = 0, bestD = Infinity;
       cards.forEach((c, i) => { const dd = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid); if (dd < bestD) { bestD = dd; best = i; } });
-      if (best !== active) { active = best; gsap.to(nums, { yPercent: -100 * best, duration: 0.6, ease: 'power3.out', overwrite: true }); }
+      if (best !== active) { sfx('card', { i: best, dir: best > active ? 1 : -1 }); active = best; gsap.to(nums, { yPercent: -100 * best, duration: 0.6, ease: 'power3.out', overwrite: true }); }
     };
     const slide = gsap.fromTo(track, { x: 0 }, {
       x: () => -dist(), ease: 'none', onUpdate: syncMeta,
@@ -944,7 +964,8 @@
     gsap.set(sets.slice(1).flat(), { yPercent: 150 });
     gsap.set(caps.slice(1), { autoAlpha: 0, y: 10 });
 
-    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false } });
+    const steps = [];
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false }, onUpdate: stepper('quote', steps) });
     fwd(tl, {
       trigger: '.quotes', start: 'top top',
       end: () => `+=${quotes.length * 65}%`,
@@ -953,6 +974,7 @@
     });
     tl.to({}, { duration: 0.45 });
     for (let i = 1; i < quotes.length; i++) {
+      steps.push(tl.duration() + 0.05);
       tl.fromTo(sets[i - 1], { yPercent: 0 }, { yPercent: -150, duration: 0.45, stagger: 0.015 })
         .fromTo(caps[i - 1], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -8, duration: 0.24 }, '<')
         .set(quotes[i - 1], { autoAlpha: 0 })
@@ -1006,6 +1028,7 @@
     ScrollTrigger.create({
       trigger: fig, start: 'top 90%', once: true,
       onEnter() {
+        sfx('count', { duration: 1.35 });
         gsap.to(dim, { '--t': 1, duration: 0.4, ease: 'power2.out' });
         gsap.to($('i', dim), { scaleX: 1, duration: 1.1, ease: 'expo.out', delay: 0.08 });
         gsap.to(obj, {
@@ -1031,7 +1054,7 @@
         .fromTo(body, { y: 18, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.95, stagger: 0.07, ease: 'power3.out' }, 0.15);
       ScrollTrigger.create({
         trigger: it, start: 'top 68%',
-        onEnter: () => { it.classList.add('is-reached'); t.play(); },
+        onEnter: () => { it.classList.add('is-reached'); t.play(); sfx('mark'); },
         onLeaveBack: () => it.classList.remove('is-reached'),
       });
       ScrollTrigger.create({
@@ -1234,6 +1257,7 @@
       html.classList.add('menu-open');
       btn.setAttribute('aria-expanded', 'true');
       label.textContent = label.dataset.close;
+      sfx('menu', { dir: 1 });
       lenis && lenis.stop();
       if (menuTl) menuTl.kill();
       if (!hasGsap || reduce) { gsap.set(menu, { autoAlpha: 1 }); gsap.set([items, extras], { clearProps: 'all' }); $('a', menu).focus(); return; }
@@ -1248,6 +1272,7 @@
       menuOpen = false;
       btn.setAttribute('aria-expanded', 'false');
       label.textContent = label.dataset.open;
+      sfx('menu', { dir: -1 });
       html.classList.remove('menu-open');
       if (menuTl) menuTl.kill();
       const done = () => { menu.hidden = true; lenis && lenis.start(); cb && cb(); };

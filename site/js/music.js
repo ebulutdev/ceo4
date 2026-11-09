@@ -189,6 +189,82 @@
       });
     }
 
+    // ---------- Sahne efektleri: hafif, müziğin altında kalır ----------
+    let ui = null;
+    function bus() {
+      if (!ui) { ui = ctx.createGain(); ui.gain.value = 1.6; ui.connect(master); }
+      return ui;
+    }
+    // Yumuşak hava geçişi (fotoğraf / söz / menü değişimi)
+    function whoosh(dir, amt, lo, hi, dur) {
+      const t = ctx.currentTime + 0.005;
+      const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+      const a = dir > 0 ? lo : hi, b = dir > 0 ? hi : lo;
+      bp.frequency.setValueAtTime(a, t); bp.frequency.exponentialRampToValueAtTime(b, t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(amt, t + dur * 0.4);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(bp); bp.connect(g); g.connect(bus());
+      src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
+    }
+    // Yumuşak nota (ahşap / çan gibi, kısa)
+    function note(freq, amt, decay, wet) {
+      const t = ctx.currentTime + 0.005;
+      [[1, 1], [2, 0.28], [3.01, 0.08]].forEach(([m, v]) => {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq * m;
+        const g = ctx.createGain(); env(g, t, amt * v, 0.006, decay / m);
+        o.connect(g); g.connect(bus()); if (wet) g.connect(verb);
+        o.start(t); o.stop(t + decay + 0.1);
+      });
+    }
+    // Kısa kalem / ahşap tıkı
+    function tap(freq, amt) {
+      const t = ctx.currentTime + 0.005;
+      const src = ctx.createBufferSource(); src.buffer = noise;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq * 2.4; bp.Q.value = 6;
+      const g = ctx.createGain(); env(g, t, amt, 0.001, 0.025);
+      src.connect(bp); bp.connect(g); g.connect(bus()); src.start(t, Math.random() * 0.9, 0.04);
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = freq;
+      const og = ctx.createGain(); env(og, t, amt * 0.5, 0.001, 0.07);
+      o.connect(og); og.connect(bus()); o.start(t); o.stop(t + 0.1);
+    }
+    // Rakam sayacı: sayacın yavaşlayan eğrisine (power3.out) uyan, azalan tıklar
+    function roll(dur) {
+      const N = 9, t0 = ctx.currentTime + 0.01;
+      for (let k = 1; k <= N; k++) {
+        const x = 1 - Math.pow(1 - k / N, 1 / 3);
+        const t = t0 + x * dur;
+        const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 1500 - k * 40;
+        const g = ctx.createGain(); env(g, t, 0.06 * (1 - k / (N + 3)), 0.001, 0.035);
+        o.connect(g); g.connect(bus()); o.start(t); o.stop(t + 0.06);
+      }
+    }
+    const PENTA = [392, 440, 523.25, 587.33, 659.25, 783.99]; // G4 A4 C5 D5 E5 G5 — uyumlu, kulağı yormaz
+    const CITY = [98, 110, 130.81, 146.83, 164.81];           // gökdelen katları: alttan yukarı
+    const last = {};
+    const SCENE = {
+      story: (d) => { whoosh(d.dir, 0.11, 380, 1700, 0.55); note(d.dir > 0 ? 110 : 98, 0.05, 0.5); },
+      lead: (d) => note(PENTA[Math.min(PENTA.length - 1, d.i + 1)] * (d.dir > 0 ? 1 : 0.89), 0.05, 0.7, true),
+      quote: (d) => whoosh(d.dir, 0.13, 300, 1200, 0.8),
+      city: (d) => { note(CITY[Math.min(CITY.length - 1, d.i)], 0.06, 1.6, true); },
+      card: (d) => tap(d.dir > 0 ? 760 : 680, 0.06),
+      count: (d) => roll(d.duration || 1.35),
+      mark: () => tap(880, 0.05),
+      menu: (d) => whoosh(d.dir, 0.13, 260, 1400, 0.4),
+    };
+    const GAP = { count: 0.35, city: 0.18, story: 0.15, lead: 0.15, quote: 0.2 };
+    addEventListener('uf:sfx', (e) => {
+      const d = e.detail || {};
+      const fn = SCENE[d.type];
+      if (!fn || !ready() || introActive) return;
+      const now = ctx.currentTime;
+      if (now - (last[d.type] || -1) < (GAP[d.type] || 0.09)) return; // hızlı kaydırmada üst üste binmesin
+      last[d.type] = now;
+      try { fn(d); } catch (err) {}
+    });
+
     let skipped = false;
     addEventListener('uf:intro-count', (e) => { if (!skipped) rise((e.detail && e.detail.duration) || 2.6); });
     addEventListener('uf:intro-year', (e) => { if (!skipped && e.detail) tick(e.detail.p); });
