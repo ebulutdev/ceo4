@@ -6,10 +6,14 @@
    Kapatma tercihi yalnızca o ziyaret boyunca geçerlidir; her yeni ziyarette ses açık gelir. */
 (() => {
   const btn = document.querySelector('.sound');
-  const audio = new Audio('assets/audio/fon-muzik-v3.mp3');
+  // Müzik dosyası, açılış videosu oynamaya hazır olana kadar indirilmez (mobilde bant genişliği önce videoya);
+  // en geç 2,5 sn sonra ya da ilk dokunuşta başlar. Açılışta müzik zaten kısık olduğundan fark edilmez.
+  const SRC = 'assets/audio/fon-muzik-v3.mp3';
+  const audio = new Audio();
   audio.loop = true;
   audio.preload = 'auto';
   audio.setAttribute('playsinline', '');
+  const ensureSrc = () => { if (!audio.getAttribute('src')) audio.src = SRC; };
 
   const TARGET = 0.45; // iOS ses düzeyini sayfaya bırakmaz; orada cihaz sesi geçerlidir
   const INTRO_LEVEL = 0.1; // açılıştaki zaman efekti sırasında müzik geride kalır
@@ -17,8 +21,8 @@
   const level = () => (introActive ? INTRO_LEVEL : TARGET);
   const KEY = 'uf-ses';
   let muted = false;
-  try { muted = sessionStorage.getItem(KEY) === 'kapali'; } catch (e) {}
-  try { localStorage.removeItem(KEY); } catch (e) {} // eski sürümün kalıcı "kapalı" kaydını temizle
+  // Her sayfa açılışında ses AÇIK başlar; kapatma yalnızca o görüntülemede geçerlidir
+  try { localStorage.removeItem(KEY); sessionStorage.removeItem(KEY); } catch (e) {} // eski kayıtları temizle
 
   let blocked = false; // tarayıcı sesli oynatmayı engelledi; dokunuş bekleniyor
 
@@ -48,12 +52,13 @@
   }
 
   const safePlay = () => {
+    ensureSrc();
     try { return Promise.resolve(audio.play()); } catch (e) { return Promise.reject(e); }
   };
 
   // 1) Sayfa açılışı: önce sesli dene; olmazsa sessiz başlat (her tarayıcı buna izin verir)
   function autostart() {
-    if (muted) return;
+    if (muted || (!audio.paused && !audio.muted)) return; // ilk dokunuşla zaten başladıysa
     sfx.resume();
     audio.muted = false;
     audio.volume = 0;
@@ -105,18 +110,27 @@
       noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noise.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-      // Kısa, yumuşak yankı (varış sesine derinlik)
-      const len = Math.floor(ctx.sampleRate * 2.6);
+    }
+    // Kısa, yumuşak yankı (varış sesine derinlik). Ağır iş (yankı tamponu + FFT hazırlığı) açılışı
+    // bekletmesin diye tarayıcı boştayken, küçük boyutta ve Math.pow olmadan üretilir.
+    function buildVerb() {
+      if (verb || !ctx) return;
+      const len = Math.floor(ctx.sampleRate * 1.3);
       const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      const k = Math.pow(0.001, 1 / len); // ~ -60 dB'e üstel sönüm
       for (let c = 0; c < 2; c++) {
         const ch = ir.getChannelData(c);
-        for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+        let a = 1;
+        for (let i = 0; i < len; i++) { ch[i] = (Math.random() * 2 - 1) * a; a *= k; }
       }
-      verb = ctx.createConvolver(); verb.buffer = ir;
-      const wet = ctx.createGain(); wet.gain.value = 0.35;
-      verb.connect(wet); wet.connect(master);
+      const cv = ctx.createConvolver(); cv.buffer = ir;
+      const wet = ctx.createGain(); wet.gain.value = 0.4;
+      cv.connect(wet); wet.connect(master);
+      verb = cv;
     }
     build();
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 600));
+    idle(buildVerb, { timeout: 1500 });
 
     const ready = () => !!ctx && ctx.state === 'running' && !muted && !audio.muted;
     function resume() { build(); if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); }
@@ -181,20 +195,22 @@
       const o = ctx.createOscillator(); o.type = 'sine';
       o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(41, t + 0.55);
       const g = ctx.createGain(); env(g, t, 0.34 * k, 0.012, 1.7 * k);
-      o.connect(g); g.connect(master); g.connect(verb); o.start(t); o.stop(t + 2);
+      o.connect(g); g.connect(master); if (verb) g.connect(verb); o.start(t); o.stop(t + 2);
       [1318.5, 1975.5, 2637].forEach((f, i) => {
         const s = ctx.createOscillator(); s.type = 'sine'; s.frequency.value = f;
         const sg = ctx.createGain(); env(sg, t + 0.03 + i * 0.045, (0.07 - i * 0.015) * k, 0.012, 2.8 * k);
-        s.connect(sg); sg.connect(master); sg.connect(verb); s.start(t); s.stop(t + 3.4);
+        s.connect(sg); sg.connect(master); if (verb) sg.connect(verb); s.start(t); s.stop(t + 3.4);
       });
     }
 
     // ---------- Sahne efektleri: hafif, müziğin altında kalır ----------
-    let ui = null;
-    function bus() {
+    let ui = null, voice = null;
+    function busRoot() {
       if (!ui) { ui = ctx.createGain(); ui.gain.value = 1.6; ui.connect(master); }
       return ui;
     }
+    // Her efekt kendi "ses kanalına" (voice) bağlanır; böylece gerektiğinde tek hamlede susturulabilir
+    const bus = () => voice || busRoot();
     // Yumuşak hava geçişi (fotoğraf / söz / menü değişimi)
     function whoosh(dir, amt, lo, hi, dur) {
       const t = ctx.currentTime + 0.005;
@@ -215,7 +231,7 @@
       [[1, 1], [2, 0.28], [3.01, 0.08]].forEach(([m, v]) => {
         const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq * m;
         const g = ctx.createGain(); env(g, t, amt * v, 0.006, decay / m);
-        o.connect(g); g.connect(bus()); if (wet) g.connect(verb);
+        o.connect(g); g.connect(bus()); if (wet && verb) g.connect(verb);
         o.start(t); o.stop(t + decay + 0.1);
       });
     }
@@ -254,15 +270,31 @@
       mark: () => tap(880, 0.05),
       menu: (d) => whoosh(d.dir, 0.13, 260, 1400, 0.4),
     };
-    const GAP = { count: 0.35, city: 0.18, story: 0.15, lead: 0.15, quote: 0.2 };
+    // Hızlı ileri-geri kaydırmada bozulmayı önleyen kurallar:
+    //  - aynı türden sesler arasında en az GAP saniye
+    //  - kısa sürede yön değiştiren (titreyen) tetiklemeler yok sayılır
+    //  - aynı türden yeni ses gelince önceki yumuşakça susturulur (üst üste yığılmaz)
+    //  - aynı anda en fazla MAX_VOICES efekt çalar
+    const GAP = { count: 0.35, city: 0.22, story: 0.22, lead: 0.2, quote: 0.25, card: 0.12, mark: 0.1, menu: 0.15 };
+    const FLIP = 0.9, MAX_VOICES = 3, VOICE_LIFE = 1.6;
+    const lastDir = {}, voices = {}, live = [];
     addEventListener('uf:sfx', (e) => {
       const d = e.detail || {};
       const fn = SCENE[d.type];
       if (!fn || !ready() || introActive) return;
       const now = ctx.currentTime;
-      if (now - (last[d.type] || -1) < (GAP[d.type] || 0.09)) return; // hızlı kaydırmada üst üste binmesin
-      last[d.type] = now;
-      try { fn(d); } catch (err) {}
+      const prev = last[d.type] == null ? -9 : last[d.type];
+      if (now - prev < (GAP[d.type] || 0.09)) return;
+      if (d.dir && lastDir[d.type] && d.dir !== lastDir[d.type] && now - prev < FLIP) return;
+      for (let i = live.length - 1; i >= 0; i--) if (live[i] < now) live.splice(i, 1);
+      if (live.length >= MAX_VOICES) return;
+      last[d.type] = now; lastDir[d.type] = d.dir || 0;
+      const old = voices[d.type];
+      if (old) { old.gain.cancelScheduledValues(now); old.gain.setValueAtTime(old.gain.value, now); old.gain.setTargetAtTime(0, now, 0.03); }
+      const v = ctx.createGain(); v.connect(busRoot());
+      voices[d.type] = v; voice = v;
+      try { fn(d); } catch (err) {} finally { voice = null; }
+      live.push(now + VOICE_LIFE);
     });
 
     let skipped = false;
@@ -293,20 +325,26 @@
   function detach() { GESTURES.forEach((g) => document.removeEventListener(g, onGesture, { capture: true })); }
 
   attach();
-  autostart();
   render();
+  // Müziği video hazır olunca (ya da en geç 2,5 sn sonra) başlat
+  (() => {
+    let started = false;
+    const go = () => { if (started) return; started = true; autostart(); };
+    const v = document.querySelector('.film__video');
+    if (!v || v.readyState >= 3) { go(); return; }
+    v.addEventListener('canplaythrough', go, { once: true });
+    setTimeout(go, 2500);
+  })();
 
   if (btn) {
     btn.addEventListener('click', () => {
       if (audible()) {
         muted = true;
-        try { sessionStorage.setItem(KEY, 'kapali'); } catch (e) {}
         fadeTo(0, 400);
         setTimeout(() => { if (muted) audio.pause(); render(); }, 420); // rAF arka planda durabilir
         render();
       } else {
         muted = false;
-        try { sessionStorage.removeItem(KEY); } catch (e) {}
         blocked = true; // bu tıklama zaten bir dokunuş: hemen aç
         unlock();
       }

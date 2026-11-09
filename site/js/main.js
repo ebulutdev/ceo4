@@ -29,12 +29,15 @@
     try { dispatchEvent(new CustomEvent('uf:sfx', { detail: { type, ...(detail || {}) } })); } catch (e) {}
   };
   // Sabit sahne zaman çizelgesi belirli bir adıma geçtiğinde (ileri / geri) tek sinyal verir
-  function stepper(type, times) {
+  // Eşikte tampon pay (histerezis): kaydırma tam eşikte gidip gelirse sinyal tekrar tekrar tetiklenmez
+  function stepper(type, times, H = 0.06) {
     let cur = 0;
     return function () {
       const t = this.time();
-      let n = 0;
-      for (let i = 0; i < times.length; i++) if (t >= times[i]) n = i + 1;
+      let up = 0, down = 0;
+      for (let i = 0; i < times.length; i++) { if (t >= times[i] + H) up = i + 1; if (t >= times[i] - H) down = i + 1; }
+      let n = cur;
+      if (up > cur) n = up; else if (down < cur) n = down;
       if (n !== cur) { const dir = n > cur ? 1 : -1; cur = n; sfx(type, { i: n, dir }); }
     };
   }
@@ -81,10 +84,13 @@
   function queueCollapse(st) {
     st._done = true;
     collapseQ.add(st);
+    // Kaydırma sürerken katlama yapılmaz (ScrollTrigger.refresh + konum düzeltmesi kaydırma ortasında takılma yaratır);
+    // kaydırma durunca 'scrollEnd' ile yapılır. Kaydırma yoksa (ör. film kendiliğinden bitti) hemen yapılır.
     if (!collapseScheduled) {
       collapseScheduled = true;
       queueMicrotask(() => {
         collapseScheduled = false;
+        if (lenis && lenis.isScrolling) return;
         runCollapse();
       });
     }
@@ -199,6 +205,10 @@
 
   // ---------- Lenis ----------
   lenis = new Lenis({ lerp: 0.13, smoothWheel: true, syncTouch: false });
+  // Lenis her kaydırma başlayıp bitişinde <html> sınıfını yeniden yazar; bu, tüm sayfanın stilini yeniden
+  // hesaplatır (kaydırma başında / sonunda takılma). Sınıf bir kez sabitlenir, sonraki yazımlar kapatılır.
+  lenis.updateClassName = () => {};
+  html.classList.add('lenis');
   lenis.stop();
   lenis.on('scroll', ScrollTrigger.update);
   ScrollTrigger.addEventListener('scrollEnd', runCollapse);
@@ -334,7 +344,9 @@
       const isMob = innerWidth < 768;
       const BASE_RATE = 0.78;
       let targetP = 0, lastScrollP = 0, filmDone = false;
-      video.src = isMob ? 'assets/film/hero-m.mp4' : 'assets/film/hero-d.mp4';
+      // Kaynak index.html'de videonun hemen altındaki satır içi betikle erkenden atanır; burada yalnızca yedek
+      if (!video.getAttribute('src')) video.src = isMob ? 'assets/film/hero-m.mp4' : 'assets/film/hero-d.mp4';
+      const MAX_RATE = isMob ? 2.6 : 3.4; // yüksek hızda mobil kod çözücü kare düşürür
       video.muted = true;
       video.playsInline = true;
       video.defaultPlaybackRate = BASE_RATE;
@@ -342,7 +354,8 @@
       const markReady = () => { if (!sec.classList.contains('is-ready')) sec.classList.add('is-ready'); };
       video.addEventListener('loadeddata', markReady, { once: true });
       video.addEventListener('canplay', markReady, { once: true });
-      video.load();
+      if (video.readyState >= 2) markReady();
+      else if (video.networkState === 0) video.load();
 
       const lines = $$('.film__name .mask > span', sec);
       const meta = [$('.film__eyebrow', sec), $('.film__role', sec)];
@@ -372,8 +385,11 @@
           const vP = Math.min(1, video.currentTime / Math.max(0.1, dur - 0.04));
           if (dp > 0) {
             targetP = Math.min(1, Math.max(targetP, vP, self.progress) + dp * 1.15);
-            if (self.progress > vP + 0.08 && dur > 0.2) {
-              try { video.currentTime = Math.min(dur - 0.04, self.progress * (dur - 0.04)); } catch (e) {}
+            // İleri sarma kod çözücüyü sıfırlar ve görüntüyü dondurur: yalnızca kaydırma videonun çok
+            // önüne geçtiyse yapılır; normalde oynatma hızı artırılarak yetişilir (bkz. tickVideoFilm)
+            if (self.progress > vP + 0.22 && dur > 0.2 && !video.seeking) {
+              const to = Math.min(dur - 0.04, self.progress * (dur - 0.04));
+              try { if (typeof video.fastSeek === 'function') video.fastSeek(to); else video.currentTime = to; } catch (e) {}
             }
             if (targetP >= 0.995 && self.progress >= 0.96) finishVideoFilm();
           } else if (dp < 0 && self.direction === -1) {
@@ -415,8 +431,8 @@
         const vP = dur > 0.2 ? Math.min(1, video.currentTime / (dur - 0.04)) : 0;
         targetP = Math.max(targetP, vP);
         const diff = Math.max(0, targetP - vP);
-        const desiredRate = Math.min(3.8, BASE_RATE + diff * 14);
-        if (Math.abs(video.playbackRate - desiredRate) > 0.04) {
+        const desiredRate = Math.min(MAX_RATE, BASE_RATE + diff * 14);
+        if (Math.abs(video.playbackRate - desiredRate) > 0.12) { // sık hız değişimi de kod çözücüyü yorar
           video.playbackRate = desiredRate;
         }
         if (video.paused && vP < 0.995) {

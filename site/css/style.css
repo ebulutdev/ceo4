@@ -53,7 +53,7 @@ ol, ul { list-style: none; }
 ::selection { background: var(--graphite); color: var(--white); }
 
 html.lenis, html.lenis body { height: auto; }
-.lenis.lenis-smooth { scroll-behavior: auto !important; }
+html.lenis { scroll-behavior: auto !important; }
 html.intro-lock body { touch-action: none; }
 
 :focus-visible { outline: 1px solid var(--silver); outline-offset: 4px; }
@@ -881,21 +881,23 @@ a.eco__row:hover .eco__t { transform: translateX(12px); }
 .sound {
   position: fixed; z-index: 95; right: 16px; bottom: calc(64px + env(safe-area-inset-bottom));
   display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
-  border: 1px solid rgba(255, 255, 255, .45); border-radius: 50%; background: transparent;
-  color: #fff; mix-blend-mode: difference; cursor: pointer; opacity: .8;
+  border: 1px solid rgba(255, 255, 255, .5); border-radius: 50%; background: rgba(14, 15, 16, .38);
+  color: #fff; cursor: pointer; opacity: .85;
   transition: opacity .3s, border-color .3s;
+  /* mix-blend-mode kullanılmaz: video üzerinde her karede tüm katmanı yeniden harmanlatır (mobilde takılma) */
 }
 .sound:hover { opacity: 1; border-color: #fff; }
 .sound:focus-visible { outline: 1px solid #fff; outline-offset: 3px; }
 .sound__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .sound__bars { display: flex; align-items: flex-end; gap: 1.5px; height: 8px; }
-.sound__bars i { display: block; width: 1.5px; height: 2px; background: currentColor; border-radius: 1px; transition: height .4s var(--ease); }
+.sound__bars i { display: block; width: 1.5px; height: 8px; background: currentColor; border-radius: 1px; transform: scaleY(.25); transform-origin: 50% 100%; transition: transform .4s var(--ease); }
 .sound.is-on .sound__bars i { animation: sound-eq 1.1s ease-in-out infinite; }
 .sound.is-on .sound__bars i:nth-child(2) { animation-delay: -.35s; }
 .sound.is-on .sound__bars i:nth-child(3) { animation-delay: -.7s; }
 .sound.is-on .sound__bars i:nth-child(4) { animation-delay: -.2s; }
-@keyframes sound-eq { 0%, 100% { height: 2px; } 50% { height: 8px; } }
-@media (prefers-reduced-motion: reduce) { .sound.is-on .sound__bars i { animation: none; height: 6px; } }
+/* Yalnızca transform: her karede yerleşim (layout) hesabı yapılmaz, GPU'da çalışır */
+@keyframes sound-eq { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .sound.is-on .sound__bars i { animation: none; transform: scaleY(.75); } }
 /* Tarayıcı sesi engellediyse: simgenin yanında küçük "Sesi aç" ipucu ve hafif nabız */
 .sound.is-blocked .sound__label {
   position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%);
@@ -905,5 +907,5 @@ a.eco__row:hover .eco__t { transform: translateX(12px); }
 }
 .sound.is-blocked { opacity: 1; animation: sound-pulse 2.4s ease-in-out infinite; }
 @keyframes sound-hint { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-@keyframes sound-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .5); } 60% { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); } }
+@keyframes sound-pulse { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .sound.is-blocked, .sound.is-blocked .sound__label { animation: none; } }

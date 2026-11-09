@@ -81,7 +81,8 @@ function mergeGeos(geos) {
 
 // Gün batımı gökyüzü — 2:1 equirect (ufuk tam ortada), dikişsiz FBM bulutları.
 // Aynı doku hem arka plan hem PMREM ortam yansıması (camlar bu gökyüzünü yansıtır) olarak kullanılır.
-function skyTexture(mobile, sunDir) {
+// Piksel piksel üretilir; satır gruplarının arasında ana iş parçacığı serbest bırakılır (kaydırma takılmaz)
+async function skyTexture(mobile, sunDir, yieldThread) {
   const W = mobile ? 512 : 1024, HH = W / 2, HOR = HH / 2;
   const c = document.createElement('canvas');
   c.width = W; c.height = HH;
@@ -127,9 +128,18 @@ function skyTexture(mobile, sunDir) {
     [0.55, hex('#D97C70')], [1.00, hex('#8A6A8A')],
   ];
   const shadowCol = hex('#4A3A58');
+  const sunTint = hex('#FFE6AE'), groundTop = hex('#A86A4E'), groundBot = hex('#1E1A1C'); // döngü dışında bir kez
   const sunU = Math.atan2(sunDir.z, sunDir.x) / (Math.PI * 2) + 0.5;
 
   for (let row = 0; row < HH; row++) {
+    if (yieldThread && row % 24 === 23) await yieldThread();
+    if (row >= HOR) {
+      // Ufkun altı yalnızca satıra bağlı: satır başına bir kez hesaplanır
+      const t = (row - HOR) / HOR;
+      const g = mix(groundTop, groundBot, Math.min(1, t * 3.5));
+      for (let col = 0, k = row * W * 4; col < W; col++, k += 4) { d[k] = g[0]; d[k + 1] = g[1]; d[k + 2] = g[2]; d[k + 3] = 255; }
+      continue;
+    }
     for (let col = 0; col < W; col++) {
       const k = (row * W + col) * 4;
       let rgb;
@@ -139,12 +149,12 @@ function skyTexture(mobile, sunDir) {
         let du = Math.abs(u - sunU); du = Math.min(du, 1 - du);
         const sunG = Math.exp(-(du * du) / 0.018) * Math.exp(-e * 7);
         rgb = ramp(skyStops, e);
-        rgb = mix(rgb, hex('#FFE6AE'), sunG * 0.45);
+        rgb = mix(rgb, sunTint, sunG * 0.45);
 
         // Bulutlar: yatayda uzamış, ufka yakın katmanlarda yoğun
-        const nx = u * 7, ny = (1 - e) * 9;
-        const n = fbm(nx, ny * 1.6);
         const band = Math.min(1, e / 0.04) * Math.max(0, 1 - e / 0.72);
+        const nx = u * 7, ny = (1 - e) * 9;
+        const n = band > 0 ? fbm(nx, ny * 1.6) : 0; // bulut bandı dışında gürültü hesaplanmaz (sonuç aynı)
         let dens = Math.max(0, Math.min(1, (n - 0.43) / 0.2)) * band;
         if (dens > 0.002) {
           const nUp = fbm(nx, ny * 1.6 - 0.35);
@@ -152,10 +162,6 @@ function skyTexture(mobile, sunDir) {
           const cc = mix(shadowCol, ramp(litStops, e), lit);
           rgb = mix(rgb, cc, dens * 0.92);
         }
-      } else {
-        // Ufkun altı: koyu sıcak zemin (camlara aşağıdan parlak sarı yansımasın)
-        const t = (row - HOR) / HOR;
-        rgb = mix(hex('#A86A4E'), hex('#1E1A1C'), Math.min(1, t * 3.5));
       }
       d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
     }
@@ -602,6 +608,8 @@ function createBloom(renderer, { strength = 0.6, threshold = 1.0 } = {}) {
 }
 
 export async function createCity(host, { mobile = false, logoUrl = null } = {}) {
+  // Kurulum küçük parçalara bölünür: ana iş parçacığı uzun süre kilitlenmez, kaydırma ve animasyon akıcı kalır
+  const yieldThread = () => (globalThis.scheduler && typeof scheduler.yield === 'function') ? scheduler.yield() : new Promise((r) => setTimeout(r, 0));
   // N = 11 kat: i=0..1 (2 kat ticari vitrin + kafe teras podyumu), i=2..9 (8 konut katı = 4 çift C-çerçeve), i=10 (çatı teras + alınlık)
   const N = 11;
   const BW = 24, BD = 20;
@@ -621,18 +629,21 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false; // gölgeler yalnızca sahne değişince yeniden çizilir (bkz. tick)
   host.appendChild(renderer.domElement);
+  await yieldThread();
 
   const SUN_POS = new THREE.Vector3(-72, 46, 68);
   const scene = new THREE.Scene();
-  const skyTex = skyTexture(mobile, SUN_POS.clone().normalize());
+  const skyTex = await skyTexture(mobile, SUN_POS.clone().normalize(), yieldThread);
   scene.background = skyTex;
   scene.fog = new THREE.Fog(0xD8946C, mobile ? 170 : 220, mobile ? 560 : 720);
+  await yieldThread();
 
   // Camlar gri stüdyo kutusunu değil, gerçek gün batımı gökyüzünü yansıtır
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envRT = pmrem.fromEquirectangular(skyTex);
   scene.environment = envRT.texture;
   scene.environmentIntensity = 1.0;
+  await yieldThread();
 
   const camera = new THREE.PerspectiveCamera(mobile ? 46 : 36, 1, 0.5, 1200);
 
@@ -659,11 +670,15 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const atlas = defneRoomAtlas();
   for (const t of [atlas.map, atlas.emissive, atlas.mr]) t.anisotropy = maxAniso;
+  await yieldThread();
   const shopTex = podiumStorefrontTexture();
   shopTex.anisotropy = maxAniso;
+  await yieldThread();
   const shopCeilTex = shopCeilingTexture();
+  await yieldThread();
   const stoneTex = slateStoneTexture();
   stoneTex.anisotropy = maxAniso;
+  await yieldThread();
   const lawnTex = courtyardLawnTexture();
   lawnTex.anisotropy = maxAniso;
 
@@ -706,6 +721,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     blueprint: new THREE.LineBasicMaterial({ color: 0xF6EFE4, transparent: true, opacity: 0.72 }),
   };
 
+  await yieldThread();
   // ---- Zemin ve parsel ----
   const street = streetTexture();
   street.repeat.set(36, 36);
@@ -779,6 +795,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   }
   scene.add(stakes);
 
+  await yieldThread();
   // ---- Temel: Mühendislik sırasıyla 7 adım ----
   // 1 Kazı + İksa (fore kazık perde, başlık kirişi, kuşak kirişi, öngermeli ankraj)
   // 2 Fore kazıklar (sondaj makinesi ile, başlarında filiz donatısı)
@@ -793,6 +810,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const PILE_L = 14;                       // görünür kazık boyu (sondajla zemine iner)
   const FLOOR_Y = -DEPTH;
 
+  await yieldThread();
   // ---- Şantiye dokuları (prosedürel) ----
   const prng = (seed0) => { let s = seed0; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
   const canvasTex = (w, h, draw, { srgb = true, repeat = null } = {}) => {
@@ -839,6 +857,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   }, { repeat: [8, 1] });
 
   // Şantiye zemini: sıkıştırılmış toprak + mıcır, lastik izleri, su birikintileri
+  await yieldThread();
   const dirtTex = canvasTex(512, 512, (x, w, h) => {
     const r = prng(9);
     x.fillStyle = '#6F5D4A'; x.fillRect(0, 0, w, h);
@@ -873,6 +892,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   }, { repeat: [5, 4] });
 
   // Brüt beton: gözenekler, lekeler, kalıp izleri
+  await yieldThread();
   const concreteDraw = (x, w, h) => {
     const r = prng(13);
     x.fillStyle = '#A8A59E'; x.fillRect(0, 0, w, h);
@@ -896,6 +916,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const raftTex = canvasTex(256, 256, concreteDraw, { repeat: [6, 6] });
 
   // Kule vinç kafes dokusu (şeffaf arka plan + X çaprazlar)
+  await yieldThread();
   const latticeTex = canvasTex(64, 64, (x, w, h) => {
     x.clearRect(0, 0, w, h);
     x.strokeStyle = '#fff'; x.lineWidth = 5;
@@ -905,6 +926,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   }, { srgb: false });
 
   // Şantiye çiti (hoarding) — antrasit panel, altın şerit, kurumsal yazı
+  await yieldThread();
   const fenceTex = canvasTex(1024, 192, (x, w, h) => {
     x.fillStyle = '#25282C'; x.fillRect(0, 0, w, h);
     const g = x.createLinearGradient(0, 0, 0, h);
@@ -925,6 +947,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
 
 
 
+  await yieldThread();
   const FM = {
     pit: new THREE.MeshStandardMaterial({ map: strataTex, roughness: 0.95, side: THREE.BackSide }),
     concrete: new THREE.MeshStandardMaterial({ map: concreteTex, bumpMap: concreteTex, bumpScale: 0.6, color: 0xE2DFD8, roughness: 0.86 }),
@@ -950,6 +973,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     m.stencilZPass = THREE.KeepStencilOp; m.stencilFail = THREE.KeepStencilOp;
   }
 
+  await yieldThread();
   const fnd = BLOCKS.map((blk) => {
     const g = new THREE.Group();
     g.position.set(blk.x, 0, blk.z);
@@ -1123,6 +1147,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     return { g, screed, blk, mask, pit, shoring, piles, starters, rig, lean, memFloor, memWalls, rebar, raft, walls, slabM, pilePts };
   });
 
+  await yieldThread();
   // ---- Şantiye: zemin, çukur tabanı, kazı kenarı gölgesi, çit, konteyner yaşam alanı, vinç, iş makineleri, çalışanlar ----
   // Makro hareketler (araç geliş/gidiş, beton dökümü) scroll ilerlemesine, mikro hareketler (kepçe döngüsü,
   // tambur dönüşü, yürüyüş, tepe lambası) gerçek zamana bağlıdır — sahne şantiye fazında canlı kalır.
@@ -1164,6 +1189,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const wheel = (r, wdt) => new THREE.CylinderGeometry(r, r, wdt, 18).rotateX(Math.PI / 2);
   const MS = (geo, mat, x = 0, y = 0, z = 0, cast = true) => { const m = sh(new THREE.Mesh(geo, mat), cast); m.position.set(x, y, z); return m; };
 
+  await yieldThread();
   // ---- Logo plakası (FETSAN GRUP marka görseli, beyaz zemin üzerinde) ----
   const logoImg = await new Promise((res) => {
     const im = new Image();
@@ -1223,6 +1249,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     F.g.add(heap);
   }
 
+  await yieldThread();
   // ---- Şantiye çiti: parsel çevresi 2.4 m panel; +Z cephesinde araç kapısı ----
   const site = new THREE.Group();
   scene.add(site);
@@ -1253,6 +1280,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   fence.add(logoPlate(4.8, GATE_X, 5.0, fz1 + 0.02), BM([{ w: 5.0, h: 1.4, d: 0.06, x: GATE_X, y: 5.0, z: fz1 - 0.03 }], SM.anth));
   site.add(fence);
 
+  await yieldThread();
   // ---- Konteyner yaşam alanı: oluklu sac gövdeli 2 katlı ofis/yatakhane bloğu ----
   const corrTex = canvasTex(512, 128, (x, w, h) => {
     const g = x.createLinearGradient(0, 0, 40, 0);
@@ -1350,6 +1378,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     flood.push({ g, spot });
   });
 
+  await yieldThread();
   // ---- Kule vinç ----
   const CR_H = 50, JIB = 44, CJIB = 13;
   const crane = new THREE.Group();
@@ -1391,6 +1420,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   crane.add(craneBase, mast, slew);
   scene.add(crane);
 
+  await yieldThread();
   // ---- Araç parçaları ----
   const wheelGeo = wheel(0.53, 0.42), rimGeo = wheel(0.3, 0.44), hubGeo = wheel(0.1, 0.48);
   const wheelCombo = (() => {
@@ -1592,6 +1622,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     return g;
   }
 
+  await yieldThread();
   // ---- Çalışanlar: baret, yansıtıcı şeritli turuncu yelek, iş pantolonu, iş botu ----
   const vestTex = canvasTex(64, 64, (x, w, h) => {
     x.fillStyle = '#F26A12'; x.fillRect(0, 0, w, h);
@@ -1652,6 +1683,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   scene.add(crewG);
   crew.forEach((c, i) => { c.g = makeWorker(c.helmet); c.seed = i * 1.73; crewG.add(c.g); });
 
+  await yieldThread();
   // ---- Araç yerleşimi (dünya koordinatı). Kapı +Z cephesinde (x = GATE_X). ----
   const vehicles = new THREE.Group();
   scene.add(vehicles);
@@ -1676,6 +1708,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   const excs = [{ ex: exA, F: fnd[0], digYaw: Math.PI / 2, dumpYaw: -Math.PI / 2 }, { ex: exB, F: fnd[1], digYaw: Math.PI, dumpYaw: 0 }];
 
   const hideAll = (...objs) => objs.forEach((o) => { o.visible = false; });
+  await yieldThread();
   // ---- Performans: her grupta aynı malzemeli statik alt parçalar tek mesh'e birleştirilir (çizim komutu sayısı ~5x azalır) ----
   function mergeStaticChildren(root) {
     const groups = [];
@@ -1826,6 +1859,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     }
   }
 
+  await yieldThread();
   // ---- Gerçek zamanlı mikro animasyonlar ----
   const _t = new THREE.Vector3();
   function solveBoom(veh, unfold, time) {
@@ -1948,6 +1982,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   };
   const win = (p, [a, b]) => clamp01((p - a) / (b - a));
 
+  await yieldThread();
   // ---- Temel bilgi kartları (3D noktaya bağlı HTML etiketleri) ----
   const STEPS = [
     { key: 'dig', t: 'Kazı ve İksa', s: 'Zemin etüdüne dayalı güvenli kazı', a: [-1.0, -2.0, PD / 2 - 1.2] },
@@ -2125,7 +2160,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   scene.add(slab);
 
 
-  const yieldThread = () => new Promise((r) => setTimeout(r, 0));
+  // (yieldThread fonksiyonun başında tanımlı)
   await yieldThread();
 
   // ---- Kat Geometri Şablonları (Gerçek Girintili Pencereler + Derzli Gri Taş Duvar + C-Çerçeve + Ahşap Lamel) ----
@@ -2362,6 +2397,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
       kind = (pair % 2 === 0 ? 'res_A_' : 'res_B_') + (isTop ? 'top' : 'bot');
     }
     floorTemplates.push(buildFloorGeo(kind, i + 1));
+    if (i % 3 === 2) await yieldThread(); // 11 kat şablonu tek seferde değil, üçer üçer
   }
 
   await yieldThread();
@@ -2435,6 +2471,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   }
 
 
+  await yieldThread();
   // ---- İkiz Blokların (A ve B) İnşası ----
   const tower = new THREE.Group();
   scene.add(tower);
@@ -2592,6 +2629,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   city.castShadow = city.receiveShadow = !mobile;
   scene.add(city, roofs);
 
+  await yieldThread();
   // ---- Dinamik görüş temizliği ----
   // Kamera hangi açıdan bakarsa baksın (özellikle dikey mobil ekranda kamera geri çekildiğinde),
   // kamera ile proje arasındaki görüş hattını kesen çevre binaları yumuşakça zemine iner; hat açılınca geri yükselir.
@@ -2674,6 +2712,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
   plotTrees.visible = false;
   scene.add(plotTrees);
 
+  await yieldThread();
   // ---- Kamera Rotası: Daha Geniş Kadraj + Her Ekran Oranında Tam Sığdırma ----
   const H = topY + 2.5;             // ~41.8 m
   const FOCUS_X = -3.2, FOCUS_Z = -1.2;
