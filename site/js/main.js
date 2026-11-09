@@ -1351,28 +1351,46 @@
       if (bad.length) { bad[0].focus(); status.textContent = 'Lütfen işaretli alanları kontrol edin.'; return; }
 
       const t = type();
-      const data = { tur: TITLE[t] };
+      const data = {};
       fields.forEach((el) => { if (el.type !== 'checkbox' && el.value.trim()) data[el.name] = el.value.trim(); });
-      btn.classList.add('is-loading'); btn.disabled = true;
-
-      const endpoint = form.dataset.endpoint;
-      try {
-        if (endpoint) {
-          const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-          const resJson = await r.json().catch(() => ({})); if (r.status === 404 || r.status === 503 || resJson.fallback === 'mailto') { const body = Object.entries(data).filter(([k]) => k !== 'tur').map(([k, v]) => `${LABEL[k] || k}: ${v}`).join('\n'); const subject = `[${TITLE[t]}] ${data.ad}`; location.href = `mailto:${RECIPIENT[t]}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; status.textContent = 'E-posta uygulamanız açılıyor; gönder dediğinizde talebiniz iletilecek.'; return; } if (!r.ok) throw new Error(r.status);
-          status.textContent = 'Talebiniz alındı. En kısa sürede size dönüş yapılacaktır.';
-          form.reset(); applyType(false);
-        } else {
-          const body = Object.entries(data).filter(([k]) => k !== 'tur').map(([k, v]) => `${LABEL[k] || k}: ${v}`).join('\n');
-          const subject = `[${TITLE[t]}] ${data.ad}`;
-          location.href = `mailto:${RECIPIENT[t]}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-          status.textContent = 'E-posta uygulamanız açılıyor; gönder dediğinizde talebiniz iletilecek.';
-        }
-      } catch (err) {
-        status.textContent = 'Gönderim sırasında bir sorun oluştu. Lütfen 444 7 097 numarasından bize ulaşın.';
-      } finally {
-        btn.classList.remove('is-loading'); btn.disabled = false;
-      }
+      openPreview(t, data);
     });
+
+    // ---- Gönderim önizlemesi (Gmail / Outlook / e-posta uygulaması) ----
+    const dlg = $('.mailprev');
+    let mail = null;
+    function compose(t, data) {
+      const info = Object.entries(data).filter(([k]) => k !== 'mesaj').map(([k, v]) => `${LABEL[k] || k}: ${v}`);
+      const body = ['Merhaba,', '', data.mesaj || '', '', '—', `Talep türü: ${TITLE[t]}`, ...info, '', 'Bu e-posta web sitesindeki iletişim formu üzerinden hazırlanmıştır.'].join('\n');
+      return { to: RECIPIENT[t], subject: `[${TITLE[t]}] ${data.ad} — İletişim Talebi`, body };
+    }
+    function openPreview(t, data) {
+      mail = compose(t, data);
+      if (!dlg || typeof dlg.showModal !== 'function') { sendVia('mailto'); return; }
+      $('[data-mp="to"]', dlg).textContent = mail.to;
+      $('[data-mp="subject"]', dlg).textContent = mail.subject;
+      $('[data-mp="body"]', dlg).textContent = mail.body;
+      lenis && lenis.stop();
+      dlg.showModal();
+      $('[data-mp-send="gmail"]', dlg).focus();
+    }
+    function sendVia(app) {
+      if (!mail) return;
+      const e = encodeURIComponent;
+      const { to, subject, body } = mail;
+      const NAME = { gmail: 'Gmail', outlook: 'Outlook', mailto: 'E-posta uygulamanız' };
+      if (app === 'gmail') window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${e(to)}&su=${e(subject)}&body=${e(body)}`, '_blank', 'noopener');
+      else if (app === 'outlook') window.open(`https://outlook.office.com/mail/deeplink/compose?to=${e(to)}&subject=${e(subject)}&body=${e(body)}`, '_blank', 'noopener');
+      else location.href = `mailto:${to}?subject=${e(subject)}&body=${e(body)}`;
+      closePreview();
+      status.textContent = `${NAME[app]} açıldı; e-postanız hazır. Göndermek için Gönder'e basmanız yeterli.`;
+    }
+    function closePreview() { if (dlg && dlg.open) dlg.close(); }
+    if (dlg) {
+      $$('[data-mp-send]', dlg).forEach((b) => b.addEventListener('click', () => sendVia(b.dataset.mpSend)));
+      $$('[data-mp-close]', dlg).forEach((b) => b.addEventListener('click', closePreview));
+      dlg.addEventListener('click', (ev) => { if (ev.target === dlg) closePreview(); }); // dışına tıklayınca kapanır
+      dlg.addEventListener('close', () => { lenis && lenis.start(); btn.focus({ preventScroll: true }); });
+    }
   }
 })();

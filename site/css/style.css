@@ -632,6 +632,35 @@ a.eco__row:hover .eco__t { transform: translateX(12px); }
 .btn.is-loading .btn__line { animation: load 1.4s var(--ease) infinite; }
 @keyframes load { 0% { transform: scaleX(0); transform-origin: left; } 50% { transform: scaleX(1); transform-origin: left; } 51% { transform-origin: right; } 100% { transform: scaleX(0); transform-origin: right; } }
 .form__status { min-height: 24px; margin-top: 12px; font-size: 14px; color: var(--graphite); }
+
+/* Gönderim önizlemesi */
+.mailprev { width: min(620px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 0; background: var(--white); color: var(--ink); box-shadow: 0 30px 80px rgba(0, 0, 0, .35); overflow: auto; overscroll-behavior: contain; }
+.mailprev::backdrop { background: rgba(11, 12, 14, .62); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.mailprev[open] { animation: mp-in .45s var(--ease-out); }
+@keyframes mp-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.mailprev__box { position: relative; padding: clamp(24px, 5vw, 40px); }
+.mailprev__x { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border: 0; background: none; font-size: 26px; line-height: 1; color: var(--steel); cursor: pointer; }
+.mailprev__x:hover { color: var(--ink); }
+.mailprev__eyebrow { margin: 0 0 8px; font-size: 10.5px; font-weight: 500; letter-spacing: .28em; text-transform: uppercase; color: var(--silver); }
+.mailprev__title { margin: 0 0 22px; font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 4vw, 34px); line-height: 1.1; }
+.mailprev__meta { margin: 0 0 14px; border-top: 1px solid var(--platinum); }
+.mailprev__meta > div { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--platinum); font-size: 14px; }
+.mailprev__meta dt { font-size: 10.5px; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--silver); padding-top: 2px; }
+.mailprev__meta dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.mailprev__body { margin: 0; max-height: 34vh; overflow: auto; padding: 16px 18px; background: var(--paper); font-family: var(--sans); font-size: 13.5px; line-height: 1.6; color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mailprev__note { margin: 14px 0 0; font-size: 13px; color: var(--steel); }
+.mailprev__actions { display: grid; gap: 10px; margin-top: 20px; }
+.mailprev__btn { min-height: 54px; padding: 0 24px; border: 1px solid var(--ink); cursor: pointer; font: 500 11.5px var(--sans); letter-spacing: .22em; text-transform: uppercase; transition: background .3s, color .3s; }
+.mailprev__btn--gmail { background: var(--ink); color: var(--white); }
+.mailprev__btn--outlook { background: transparent; color: var(--ink); }
+@media (hover: hover) {
+  .mailprev__btn--gmail:hover { background: var(--graphite); }
+  .mailprev__btn--outlook:hover { background: var(--ink); color: var(--white); }
+}
+.mailprev__sub { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; margin-top: 16px; }
+.mailprev__sub button { padding: 6px 0; border: 0; border-bottom: 1px solid currentColor; background: none; cursor: pointer; font: 400 13px var(--sans); color: var(--steel); }
+.mailprev__sub button:hover { color: var(--ink); }
+@media (min-width: 560px) { .mailprev__actions { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 560px) {
   .form__types { display: flex; flex-wrap: wrap; }
   .btn { width: auto; justify-self: start; }

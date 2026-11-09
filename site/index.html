@@ -51,7 +51,7 @@
     })();
   </script>
   <script type="importmap">{ "imports": { "three": "./assets/vendor/three/three.module.min.js" } }</script>
-  <link rel="stylesheet" href="css/style.css?v=1be5c6b8">
+  <link rel="stylesheet" href="css/style.css?v=1057116e">
 
   <script type="application/ld+json">
   {
@@ -578,8 +578,8 @@
           </ul>
         </div>
 
-        <!-- data-endpoint: backend (ör. /api/contact) bağlanınca doldurulur. Boşken e-posta uygulaması açılır. -->
-        <form class="form" novalidate data-endpoint="/api/contact">
+        <!-- Talebi Gönder: önizleme penceresi açılır; talep Gmail / Outlook / e-posta uygulamasında hazırlanır. -->
+        <form class="form" novalidate>
           <fieldset class="form__types">
             <legend>Talep türü</legend>
             <label><input type="radio" name="tur" value="genel" checked><span>Genel</span></label>
@@ -631,6 +631,29 @@
           <button class="btn magnetic" type="submit"><span class="btn__txt">Talebi Gönder</span><span class="btn__line" aria-hidden="true"></span></button>
           <p class="form__status" role="status" aria-live="polite"></p>
         </form>
+
+        <!-- Gönderim önizlemesi: talep Gmail / Outlook / e-posta uygulamasında hazır açılır, kullanıcı oradan Gönder'e basar -->
+        <dialog class="mailprev" aria-labelledby="mp-title" data-lenis-prevent>
+          <div class="mailprev__box">
+            <button class="mailprev__x" type="button" data-mp-close aria-label="Kapat">×</button>
+            <p class="mailprev__eyebrow">Önizleme</p>
+            <h3 class="mailprev__title" id="mp-title">Talebinizi kontrol edin</h3>
+            <dl class="mailprev__meta">
+              <div><dt>Kime</dt><dd data-mp="to"></dd></div>
+              <div><dt>Konu</dt><dd data-mp="subject"></dd></div>
+            </dl>
+            <pre class="mailprev__body" data-mp="body"></pre>
+            <p class="mailprev__note">Seçtiğiniz uygulamada e-postanız hazır açılır; iletmek için orada <b>Gönder</b>'e basmanız yeterli.</p>
+            <div class="mailprev__actions">
+              <button class="mailprev__btn mailprev__btn--gmail" type="button" data-mp-send="gmail">Gmail ile gönder</button>
+              <button class="mailprev__btn mailprev__btn--outlook" type="button" data-mp-send="outlook">Outlook ile gönder</button>
+            </div>
+            <div class="mailprev__sub">
+              <button type="button" data-mp-send="mailto">E-posta uygulamasıyla aç</button>
+              <button type="button" data-mp-close>Düzenle</button>
+            </div>
+          </div>
+        </dialog>
       </div>
     </section>
   </main>
@@ -743,6 +766,6 @@
   <script src="assets/vendor/ScrollTrigger.min.js" defer></script>
   <script src="assets/vendor/lenis.min.js" defer></script>
   <script src="assets/vendor/split-type.min.js" defer></script>
-  <script src="js/main.js?v=fec4406f&amp;v3d=fd94ed5f" defer></script>
+  <script src="js/main.js?v=0119d9f8&amp;v3d=fd94ed5f" defer></script>
 </body>
 </html>
