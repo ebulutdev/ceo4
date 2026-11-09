@@ -56,34 +56,60 @@
   // Katlama sırasında sayfa önce kısalır, sonra kaydırma konumu düzeltilir. Bu ara anda sonraki sahneler
   // kendini yanlışlıkla 'geçilmiş' sanmasın diye tüm sahne olayları yok sayılır (zincirleme atlama hatası).
   let collapsing = false;
+  let collapseScheduled = false;
   const sceneChecks = []; // katlamadan sonra 'sonu geçilmiş ama bitmemiş' sahneleri tamamlar
-  function queueCollapse(st) { collapseQ.add(st); }
+  function queueCollapse(st) {
+    st._done = true;
+    collapseQ.add(st);
+    if (!collapseScheduled) {
+      collapseScheduled = true;
+      queueMicrotask(() => {
+        collapseScheduled = false;
+        runCollapse();
+      });
+    }
+  }
   function runCollapse() {
     if (collapsing || !collapseQ.size) return;
-    const list = [...collapseQ].filter((st) => st.progress >= 1);
+    const list = [...collapseQ].filter((st) => st.progress >= 1 || st._done);
     if (!list.length) return;
     collapsing = true;
-    const y0 = lenis ? lenis.scroll : scrollY;
+    const y0 = lenis ? lenis.animatedScroll : scrollY;
     let removed = 0;
     for (const st of list) {
       collapseQ.delete(st);
-      removed += Math.max(0, st.end - st.start);
+      const span = Math.max(0, st.end - st.start);
+      const consumed = Math.max(0, Math.min(y0 - st.start, span));
+      removed += consumed;
       st.kill(true);
     }
     const y = Math.max(0, y0 - removed);
-    if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
+    if (lenis) {
+      lenis.dimensions.resize();
+      const targetY = Math.max(0, Math.min(lenis.limit, lenis.targetScroll - removed));
+      lenis.animatedScroll = y;
+      lenis.targetScroll = targetY;
+      if (lenis.animate && lenis.animate.isRunning) {
+        lenis.animate.value = y;
+        lenis.animate.from = Math.max(0, lenis.animate.from - removed);
+        lenis.animate.to = targetY;
+      }
+      lenis.setScroll(y);
+      lenis.preventNextNativeScrollEvent();
+    }
     scrollTo(0, y);
     ScrollTrigger.refresh();
     // Konum düzeltildikten sonra sahneler doğru ilerleme değerleriyle yeniden olay almaya başlar
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
       collapsing = false;
       ScrollTrigger.update();
       sceneChecks.forEach((fn) => fn());
-    }));
+    });
   }
 
   function fwd(anim, vars) {
-    const { scrub = true, ...rest } = vars;
+    const { scrub = true, autoSpeed = 0, canAuto = null, ...rest } = vars;
+    let curP = 0, maxP = 0, lastScrollP = 0, lastTick = gsap.ticker.time;
     anim.pause();
     let done = false;
     const lag = scrub === true ? 0 : scrub;
@@ -91,13 +117,39 @@
       if (!lag) anim.progress(p);
       else gsap.to(anim, { progress: p, duration: lag, ease: 'power1.out', overwrite: true });
     };
+    function completeScene(self) {
+      if (done) return;
+      done = true;
+      st._done = true;
+      if (autoSpeed > 0) gsap.ticker.remove(tickAuto);
+      go(1);
+      if (rest.onLeave) rest.onLeave(self);
+      if (self.pin) queueCollapse(self);
+    }
     const st = ScrollTrigger.create({
       ...rest,
-      onUpdate(self) { if (!done && !collapsing) go(self.progress); if (rest.onUpdate) rest.onUpdate(self); },
+      onUpdate(self) {
+        if (!done && !collapsing) {
+          maxP = Math.max(maxP, self.progress);
+          if (autoSpeed > 0) {
+            const dp = self.progress - lastScrollP;
+            lastScrollP = self.progress;
+            if (dp > 0) {
+              curP = Math.min(1, Math.max(curP + dp, self.progress));
+              go(curP);
+              if (curP >= 1) finishAuto();
+            }
+          } else if (self.pin && maxP >= 0.88 && self.direction === -1) {
+            completeScene(self);
+          } else {
+            go(self.progress);
+          }
+        }
+        if (rest.onUpdate) rest.onUpdate(self);
+      },
       onLeave(self) {
         if (collapsing) return;
-        if (!done) { done = true; go(1); if (self.pin) queueCollapse(self); }
-        if (rest.onLeave) rest.onLeave(self);
+        completeScene(self);
       },
       onRefresh(self) {
         if (rest.invalidateOnRefresh) { const p = anim.progress(); anim.invalidate().progress(0).progress(p); }
@@ -105,9 +157,23 @@
       },
     });
     sceneChecks.push(() => {
-      if (done || !st.isActive && st.progress < 1) return;
-      if (st.progress >= 1) { done = true; go(1); if (st.pin) queueCollapse(st); }
+      if (done || (!st.isActive && st.progress < 1)) return;
+      if (st.progress >= 1) completeScene(st);
     });
+    function finishAuto() {
+      if (done) return;
+      curP = 1;
+      completeScene(st);
+    }
+    function tickAuto(time) {
+      const dt = Math.min(0.06, Math.max(0, time - lastTick));
+      lastTick = time;
+      if (done || collapsing || menuOpen || html.classList.contains('intro-lock') || (canAuto && !canAuto())) return;
+      curP = Math.min(1, curP + dt * autoSpeed);
+      go(curP);
+      if (curP >= 1) finishAuto();
+    }
+    if (autoSpeed > 0) gsap.ticker.add(tickAuto);
     return st;
   }
 
@@ -189,7 +255,7 @@
         { autoAlpha: 0, y: 8, filter: 'blur(8px)' },
         { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 1.2 * k, ease: 'power3.out' }, '-=0.75')
       // Siteye geçiş: içerik yumuşakça dağılır, perdeler kademeli olarak yukarı kalkar
-      .to(['.intro__content', '.intro__skip'], { autoAlpha: 0, y: -10, filter: 'blur(8px)', duration: 0.65, ease: 'power2.in' }, `+=${0.6 * k}`)
+      .to(['.intro__content', '.intro__skip'], { autoAlpha: 0, y: -10, duration: 0.65, ease: 'power2.in' }, `+=${0.6 * k}`)
       .to('.intro__panel--l', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '-=0.18')
       .to('.intro__panel--r', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '<0.09')
       .add(unlockScroll, '<0.3')
@@ -233,6 +299,109 @@
 
   function initFilm() {
     const sec = $('.film');
+    const video = $('.film__video', sec);
+    if (video) {
+      const isMob = innerWidth < 768;
+      const BASE_RATE = 0.78;
+      let targetP = 0, lastScrollP = 0, filmDone = false;
+      video.src = isMob ? 'assets/film/hero-m.mp4' : 'assets/film/hero-d.mp4';
+      video.muted = true;
+      video.playsInline = true;
+      video.defaultPlaybackRate = BASE_RATE;
+      video.playbackRate = BASE_RATE;
+      const markReady = () => { if (!sec.classList.contains('is-ready')) sec.classList.add('is-ready'); };
+      video.addEventListener('loadeddata', markReady, { once: true });
+      video.addEventListener('canplay', markReady, { once: true });
+      video.load();
+
+      const lines = $$('.film__name .mask > span', sec);
+      const meta = [$('.film__eyebrow', sec), $('.film__role', sec)];
+      gsap.set(lines, { yPercent: 150 });
+      gsap.set(meta, { autoAlpha: 0, y: 14 });
+      gsap.set('.film__title', { autoAlpha: 0 });
+
+      const filmTl = gsap.timeline({ paused: true, defaults: { ease: 'none', immediateRender: false } })
+        .fromTo('.film__cue', { autoAlpha: 1 }, { autoAlpha: 0, duration: 0.12, immediateRender: false }, 0.16)
+        .fromTo('.film__shade', { opacity: 0 }, { opacity: 1, duration: 0.28 }, 0.54)
+        .fromTo('.film__title', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.02, immediateRender: false }, 0.58)
+        .fromTo(lines, { yPercent: 150 }, { yPercent: 0, duration: 0.24, stagger: 0.04, ease: 'power3.out' }, 0.59)
+        .fromTo(meta, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.18, stagger: 0.04, ease: 'power2.out' }, 0.68)
+        .to({}, { duration: 0.14 });
+
+      const filmSt = ScrollTrigger.create({
+        trigger: sec,
+        start: 'top top',
+        end: () => (isDesk() ? '+=200%' : '+=165%'),
+        pin: '.film__pin',
+        invalidateOnRefresh: true,
+        onUpdate(self) {
+          if (filmDone || collapsing) return;
+          const dp = self.progress - lastScrollP;
+          lastScrollP = self.progress;
+          const dur = video.duration || 5.8;
+          const vP = Math.min(1, video.currentTime / Math.max(0.1, dur - 0.04));
+          if (dp > 0) {
+            targetP = Math.min(1, Math.max(targetP, vP, self.progress) + dp * 1.15);
+            if (self.progress > vP + 0.08 && dur > 0.2) {
+              try { video.currentTime = Math.min(dur - 0.04, self.progress * (dur - 0.04)); } catch (e) {}
+            }
+            if (targetP >= 0.995 && self.progress >= 0.96) finishVideoFilm();
+          } else if (dp < 0 && self.direction === -1) {
+            if (vP >= 0.72 || targetP >= 0.78) {
+              finishVideoFilm();
+            } else if (lenis && lenis.animatedScroll > 0) {
+              lastScrollP = 0;
+              lenis.animatedScroll = 0;
+              lenis.targetScroll = 0;
+              if (lenis.animate) lenis.animate.stop();
+              lenis.setScroll(0);
+              scrollTo(0, 0);
+            }
+          }
+        },
+        onLeave() {
+          if (!collapsing) finishVideoFilm();
+        },
+      });
+
+      function finishVideoFilm() {
+        if (filmDone) return;
+        filmDone = true;
+        gsap.ticker.remove(tickVideoFilm);
+        const dur = video.duration || 5.8;
+        try { video.pause(); if (dur > 0.2) video.currentTime = dur - 0.03; } catch (e) {}
+        filmTl.progress(1);
+        if (warmCity) warmCity();
+        queueCollapse(filmSt);
+      }
+
+      function tickVideoFilm() {
+        if (filmDone || collapsing || html.classList.contains('intro-lock')) return;
+        if (menuOpen) {
+          if (!video.paused) video.pause();
+          return;
+        }
+        const dur = video.duration || 5.8;
+        const vP = dur > 0.2 ? Math.min(1, video.currentTime / (dur - 0.04)) : 0;
+        targetP = Math.max(targetP, vP);
+        const diff = Math.max(0, targetP - vP);
+        const desiredRate = Math.min(3.8, BASE_RATE + diff * 14);
+        if (Math.abs(video.playbackRate - desiredRate) > 0.04) {
+          video.playbackRate = desiredRate;
+        }
+        if (video.paused && vP < 0.995) {
+          video.play().catch(() => {});
+        }
+        filmTl.progress(vP);
+        if (video.ended || vP >= 0.995) {
+          finishVideoFilm();
+        }
+      }
+
+      gsap.ticker.add(tickVideoFilm);
+      video.addEventListener('ended', finishVideoFilm, { once: true });
+      return;
+    }
     const canvas = $('.film__canvas', sec);
     const posterImg = $('.film__poster img', sec);
     // 1. Opak ve düşük gecikmeli 2D bağlamı (alfa harmanlama maliyetini sıfırlar)
@@ -245,9 +414,9 @@
     // İki katmanlı bellek:
     // Katman 1: Sıkıştırılmış WebP Blob dizisi (~8.3 MB RAM, ömür boyu kalıcı)
     // Katman 2: Kaydırma yönlü asimetrik ImageBitmap penceresi (+24 ileri, -10 geri; resizeWidth olmadan ~1.5 ms Worker decode)
-    const WIN_AHEAD = isMob ? 16 : 24;
+    const WIN_AHEAD = isMob ? 24 : 38;
     const WIN_BEHIND = isMob ? 6 : 10;
-    const MAX_DECODE = 4;
+    const MAX_DECODE = 6;
 
     const blobs = new Array(cfg.n).fill(null);
     const bitmaps = new Map();
@@ -255,7 +424,7 @@
     const fetching = new Set();
     const src = (i) => `assets/film/${cfg.dir}/${String(i + 1).padStart(3, '0')}.webp`;
 
-    let want = cfg.startF;
+    let want = cfg.startF, wantPos = cfg.startF, drawnPos = -1, stallFrames = 0;
     let drawn = -1;
     let scrollDir = 1;
     let rafId = 0;
@@ -306,6 +475,25 @@
     }
 
     function drawSync() {
+      if (bitmaps.has(want)) {
+        const nextIdx = Math.min(cfg.n - 1, want + 1);
+        const frac = wantPos - want;
+        const canBlend = nextIdx > want && frac > 0.015 && bitmaps.has(nextIdx);
+        if (want !== drawn || (canBlend && Math.abs(wantPos - drawnPos) > 0.012) || (!canBlend && drawnPos !== want)) {
+          ctx.globalAlpha = 1;
+          drawSource(bitmaps.get(want), want);
+          if (canBlend) {
+            ctx.globalAlpha = frac;
+            drawSource(bitmaps.get(nextIdx), want);
+            ctx.globalAlpha = 1;
+            drawnPos = wantPos;
+          } else {
+            drawnPos = want;
+          }
+        }
+        syncBitmapWindow();
+        return;
+      }
       const idx = findBestFrame(want);
       if (idx >= 0 && idx !== drawn) {
         drawSource(bitmaps.get(idx), idx);
@@ -401,7 +589,7 @@
     // 6. 3 fazlı örgülü (4n -> 2n -> 2n+1) + dinamik hedef (want) odaklı ağ kuyruğu
     const priorityOrder = [];
     const seenOrder = new Set();
-    for (const step of [4, 2, 1]) {
+    for (const step of [1]) {
       for (let i = cfg.startF; i < cfg.n; i += step) {
         if (!seenOrder.has(i)) {
           seenOrder.add(i);
@@ -473,18 +661,31 @@
     fwd(filmTl, {
       trigger: sec, start: 'top top',
       end: () => (isDesk() ? '+=200%' : '+=165%'),
-      pin: '.film__pin', scrub: true,
+      pin: '.film__pin', scrub: true, autoSpeed: 1 / (isMob ? 7.2 : 8.2),
+      canAuto: () => {
+        const nextF = Math.min(cfg.n - 1, want + 1);
+        if (bitmaps.has(want) && (bitmaps.has(nextF) || want >= cfg.n - 1)) { stallFrames = 0; return true; }
+        return ++stallFrames > 14;
+      },
       invalidateOnRefresh: true,
       onLeave: () => { if (warmCity) warmCity(); },
     });
     filmTl
-      .fromTo('.film__cue', { autoAlpha: 1 }, { autoAlpha: 0, duration: 0.06, immediateRender: false }, 0)
+      .fromTo('.film__cue', { autoAlpha: 1 }, { autoAlpha: 0, duration: 0.10, immediateRender: false }, 0.18)
       .fromTo(obj, { f: cfg.startF }, {
         f: cfg.n - 1,
         duration: 0.92,
         onUpdate: () => {
-          const nextWant = Math.min(cfg.n - 1, Math.max(cfg.startF, Math.round(obj.f)));
-          if (nextWant !== want) {
+          const nextPos = Math.min(cfg.n - 1, Math.max(cfg.startF, obj.f));
+          const nextWant = Math.floor(nextPos);
+          if (Math.abs(nextPos - drawnPos) > 0.012 || nextWant !== want) {
+            scrollDir = nextPos >= wantPos ? 1 : -1;
+            wantPos = nextPos;
+            want = nextWant;
+            drawSync();
+          }
+
+          if (false) {
             scrollDir = nextWant > want ? 1 : -1;
             want = nextWant;
             drawSync();
@@ -630,16 +831,31 @@
       if (api) api.setProgress(p);
     }
 
-    let cityDone = false;
+    let cityDone = false, maxCityP = 0;
+    function finishCity(st) {
+      if (cityDone) return;
+      cityDone = true;
+      st._done = true;
+      update(1);
+      queueCollapse(st);
+    }
     const citySt = ScrollTrigger.create({
       trigger: sec, start: 'top top',
-      end: () => (isDesk() ? '+=360%' : '+=290%'),
+      end: () => (isDesk() ? '+=430%' : '+=350%'),
       pin: '.city__pin', pinSpacing: true,
       invalidateOnRefresh: true,
-      onUpdate: (self) => { if (!cityDone && !collapsing) update(self.progress); },
-      onLeave: (self) => { if (!cityDone && !collapsing) { cityDone = true; update(1); queueCollapse(self); } }, // tamamlanınca kilitlenir ve katlanır
+      onUpdate: (self) => {
+        if (cityDone || collapsing) return;
+        maxCityP = Math.max(maxCityP, self.progress);
+        if (maxCityP >= 0.88 && self.direction === -1) {
+          finishCity(self);
+        } else {
+          update(self.progress);
+        }
+      },
+      onLeave: (self) => { if (!collapsing) finishCity(self); }, // tamamlanınca kilitlenir ve katlanır
     });
-    sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) { cityDone = true; update(1); queueCollapse(citySt); } });
+    sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) finishCity(citySt); });
 
     const gl = (() => { try { const c = d.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
     if (!gl) { sec.classList.add('is-fallback'); return; }
@@ -1143,7 +1359,7 @@
       try {
         if (endpoint) {
           const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-          if (!r.ok) throw new Error(r.status);
+          const resJson = await r.json().catch(() => ({})); if (r.status === 404 || r.status === 503 || resJson.fallback === 'mailto') { const body = Object.entries(data).filter(([k]) => k !== 'tur').map(([k, v]) => `${LABEL[k] || k}: ${v}`).join('\n'); const subject = `[${TITLE[t]}] ${data.ad}`; location.href = `mailto:${RECIPIENT[t]}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; status.textContent = 'E-posta uygulamanız açılıyor; gönder dediğinizde talebiniz iletilecek.'; return; } if (!r.ok) throw new Error(r.status);
           status.textContent = 'Talebiniz alındı. En kısa sürede size dönüş yapılacaktır.';
           form.reset(); applyType(false);
         } else {

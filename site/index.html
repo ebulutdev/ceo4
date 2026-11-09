@@ -51,7 +51,7 @@
     })();
   </script>
   <script type="importmap">{ "imports": { "three": "./assets/vendor/three/three.module.min.js" } }</script>
-  <link rel="stylesheet" href="css/style.css?v=23ce0dcc">
+  <link rel="stylesheet" href="css/style.css?v=1be5c6b8">
 
   <script type="application/ld+json">
   {
@@ -172,6 +172,7 @@
           <source media="(max-width: 767px)" srcset="assets/film/m/005.webp" type="image/webp">
           <img src="assets/film/d/007.webp" width="1920" height="1080" fetchpriority="high" decoding="async" alt="FETSAN Grup imzalı konut projesinin gece görünümü">
         </picture>
+        <video class="film__video" muted playsinline preload="auto" aria-hidden="true"></video>
         <canvas class="film__canvas" aria-hidden="true"></canvas>
         <div class="film__shade" aria-hidden="true"></div>
         <div class="film__cue wrap" aria-hidden="true">
@@ -296,7 +297,7 @@
               </li>
               <li class="principle">
                 <h3 class="principle__title"><span class="mask"><span>Çok sektörlü</span></span><span class="mask"><span><em>vizyon.</em></span></span></h3>
-                <p class="principle__line">İnşaatın yanında otomotiv, tekstil ve restoran yatırımları.</p>
+                <p class="principle__line">İnşaatın yanında otomotiv ve teknoloji yatırımları.</p>
               </li>
             </ol>
           </div>
@@ -390,7 +391,7 @@
             </li>
             <li class="tl__item">
               <div class="tl__year tl__year--word"><span><em>Büyüme</em></span></div>
-              <div class="tl__body"><p class="tl__tag">Çok sektörlü yapı</p><h3>İnşaatın ötesinde</h3><p>Grup; otomotiv, tekstil ve restoran yatırımlarıyla faaliyet alanını genişletir.</p></div>
+              <div class="tl__body"><p class="tl__tag">Çok sektörlü yapı</p><h3>İnşaatın ötesinde</h3><p>Grup; otomotiv ve teknoloji yatırımlarıyla faaliyet alanını genişletir.</p></div>
             </li>
             <li class="tl__item">
               <div class="tl__year"><span>2025</span></div>
@@ -578,7 +579,7 @@
         </div>
 
         <!-- data-endpoint: backend (ör. /api/contact) bağlanınca doldurulur. Boşken e-posta uygulaması açılır. -->
-        <form class="form" novalidate data-endpoint="">
+        <form class="form" novalidate data-endpoint="/api/contact">
           <fieldset class="form__types">
             <legend>Talep türü</legend>
             <label><input type="radio" name="tur" value="genel" checked><span>Genel</span></label>
@@ -742,6 +743,6 @@
   <script src="assets/vendor/ScrollTrigger.min.js" defer></script>
   <script src="assets/vendor/lenis.min.js" defer></script>
   <script src="assets/vendor/split-type.min.js" defer></script>
-  <script src="js/main.js?v=f9a36911&amp;v3d=8e4f3f91" defer></script>
+  <script src="js/main.js?v=fec4406f&amp;v3d=fd94ed5f" defer></script>
 </body>
 </html>

@@ -263,11 +263,11 @@ html.intro-lock body { touch-action: none; }
 /* ---------- 00 · Film (scroll ile ilerleyen giriş) ---------- */
 .film { position: relative; background: var(--anthracite); color: var(--white); }
 .film__pin { position: relative; height: 100svh; min-height: 560px; overflow: hidden; }
-.film__poster img, .film__canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.film__canvas { opacity: 0; }
-.film.is-ready .film__canvas { opacity: 1; }
+.film__poster img, .film__video, .film__canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.film__video, .film__canvas { opacity: 0; }
+.film.is-ready .film__video { opacity: 1; }
 .film.is-ready .film__poster img { visibility: hidden; }
-.no-motion .film__canvas { display: none; }
+.no-motion .film__video, .no-motion .film__canvas { display: none; }
 .film__pin::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, rgba(14, 15, 16, .55) 0%, rgba(14, 15, 16, 0) 22%, rgba(14, 15, 16, 0) 70%, rgba(14, 15, 16, .6) 100%);

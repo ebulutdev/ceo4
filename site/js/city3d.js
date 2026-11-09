@@ -1950,13 +1950,13 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
 
   // ---- Temel bilgi kartları (3D noktaya bağlı HTML etiketleri) ----
   const STEPS = [
-    { key: 'dig', t: 'Kazı ve İksa', s: '−6.00 m bodrum kotu · Ø80 sekant kazık perde · 2 sıra öngermeli ankraj', w: 'Kazı çevresindeki zemini ve komşu yapıları güvenle tutar.', a: [-PW / 2 + 0.4, -2.2, PD / 2 - 0.4] },
-    { key: 'piles', t: 'Fore Kazık', s: '40 adet · Ø80 cm · 18 m · C35 beton, donatı kafesli', w: 'Yükü zayıf üst tabakalardan sağlam zemine aktarır, oturmayı önler.', a: [0, FLOOR_Y + 1, 0] },
-    { key: 'lean', t: 'Grobeton', s: '10 cm C16 tesviye betonu', w: 'Donatıyı topraktan ayırır; düz ve temiz çalışma yüzeyi sağlar.', a: [IW * 0.2, FLOOR_Y + 0.1, 0] },
-    { key: 'mem', t: 'Su Yalıtımı', s: 'Çift kat 4 mm bitümlü membran · perdelerde drenaj levhası', w: 'Yeraltı suyunun betona ve donatıya ulaşmasını engeller.', a: [-IW / 2, FLOOR_Y + 2.5, 2] },
-    { key: 'rebar', t: 'Radye Donatısı', s: 'Alt + üst çift kat Ø20/15 · S420 · perde filizleri', w: 'Yükü tüm temele yayar; eğilme ve zımbalamaya karşı direnç verir.', a: [2, FLOOR_Y + RAFT, 2] },
-    { key: 'raft', t: 'Radye Beton', s: '160 cm · C35/45 · kesintisiz pompa dökümü, vibratörlü', w: 'Tek parça monolitik plak; deprem yükünü bütün olarak karşılar.', a: [0, FLOOR_Y + RAFT, 0] },
-    { key: 'walls', t: 'Bodrum Perdeleri', s: '40 cm su geçirimsiz beton · kolonlar · zemin kat döşemesi', w: 'Binayı zemine kenetler; toprak ve deprem itkisini taşır.', a: [IW / 2 - 0.25, -2, ID / 2 - 0.25] },
+    { key: 'dig', t: 'Kazı ve İksa', s: 'Zemin etüdüne dayalı güvenli kazı', a: [-1.0, -2.0, PD / 2 - 1.2] },
+    { key: 'piles', t: 'Fore Kazık', s: 'Yükü sağlam zemine aktaran derin temel', a: [0.5, FLOOR_Y + 1.5, 4.5] },
+    { key: 'lean', t: 'Grobeton', s: 'Temel öncesi düzgün ve temiz çalışma yüzeyi', a: [-1.0, FLOOR_Y + 0.2, 5.0] },
+    { key: 'mem', t: 'Su Yalıtımı', s: 'Zemin suyuna karşı yalıtım ve drenaj', a: [-IW * 0.25, FLOOR_Y + 2.0, 5.5] },
+    { key: 'rebar', t: 'Radye Donatısı', s: 'Projeye ve yönetmeliklere uygun çelik donatı', a: [0.0, FLOOR_Y + RAFT, 4.8] },
+    { key: 'raft', t: 'Radye Beton', s: 'Denetimli, kesintisiz tek parça döküm', a: [-1.2, FLOOR_Y + RAFT + 0.2, 4.8] },
+    { key: 'walls', t: 'Bodrum Perdeleri', s: 'Su geçirimsiz perdeler ve taşıyıcı sistem', a: [-0.5, -1.2, ID / 2 - 0.5] },
   ];
   const labelLayer = document.createElement('div');
   labelLayer.className = 'fnd-labels';
@@ -1964,45 +1964,81 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     const st = document.createElement('style');
     st.id = 'fnd-label-css';
     st.textContent = `
-      .fnd-labels{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}
+      .fnd-labels{position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden}
       .fnd-label{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity}
-      .fnd-label i{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#F2C35A;box-shadow:0 0 0 4px rgba(242,195,90,.25),0 0 14px rgba(242,195,90,.8)}
-      .fnd-label span.ln{position:absolute;left:0;bottom:0;width:46px;height:1px;background:rgba(242,195,90,.85);transform-origin:0 0;transform:rotate(-45deg)}
-      .fnd-label .card{position:absolute;left:34px;bottom:30px;width:min(300px,62vw);padding:12px 14px 13px;
-        background:rgba(18,19,21,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-        border:1px solid rgba(242,195,90,.35);border-left:2px solid #F2C35A;color:#fff;font-family:Jost,system-ui,sans-serif}
-      .fnd-label .no{display:block;font-size:10.5px;letter-spacing:.18em;color:#F2C35A;margin-bottom:4px}
-      .fnd-label b{display:block;font-weight:500;font-size:16px;letter-spacing:.02em}
-      .fnd-label em{display:block;font-style:normal;font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.88);margin-top:4px}
-      .fnd-label small{display:block;font-size:12px;line-height:1.45;color:rgba(255,255,255,.62);margin-top:6px}
-      .fnd-label .bar{height:2px;background:rgba(255,255,255,.12);margin-top:9px}
+      .fnd-label i{position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:#F2C35A;box-shadow:0 0 0 2.5px rgba(242,195,90,.28),0 0 8px rgba(242,195,90,.85)}
+      .fnd-label span.ln{position:absolute;left:0;top:0;width:20px;height:1px;background:rgba(242,195,90,.82);transform-origin:0 50%}
+      .fnd-label .card{position:absolute;left:16px;top:-42px;width:max-content;max-width:min(220px,54vw);padding:5px 9px 6px;
+        background:rgba(15,16,18,.82);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+        border:1px solid rgba(242,195,90,.3);border-left:2px solid #F2C35A;border-radius:2px;
+        box-shadow:0 4px 14px rgba(0,0,0,.36);color:#fff;font-family:Jost,system-ui,sans-serif}
+      .fnd-label .hd{display:flex;align-items:baseline;gap:6px;line-height:1.15}
+      .fnd-label .no{font-size:8px;font-weight:500;letter-spacing:.14em;color:#F2C35A;white-space:nowrap}
+      .fnd-label b{font-weight:500;font-size:11.5px;letter-spacing:.01em;color:#fff;white-space:nowrap}
+      .fnd-label em{display:block;font-style:normal;font-size:9.5px;line-height:1.25;color:rgba(255,255,255,.76);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .fnd-label .bar{height:1.5px;background:rgba(255,255,255,.14);margin-top:4px;overflow:hidden}
       .fnd-label .bar>u{display:block;height:100%;width:0;background:#F2C35A}
-      @media (max-width:767px){.fnd-label .card{width:min(230px,58vw);padding:9px 11px}.fnd-label b{font-size:14px}.fnd-label small{display:none}}`;
+      @media (max-width:767px){
+        .fnd-label .card{max-width:min(188px,58vw);padding:4px 7px 5px}
+        .fnd-label .hd{gap:5px}
+        .fnd-label .no{font-size:7px;letter-spacing:.12em}
+        .fnd-label b{font-size:10.5px}
+        .fnd-label em{font-size:8.5px;white-space:normal;line-height:1.22}
+        .fnd-label .bar{margin-top:3px;height:1px}
+      }`;
     document.head.appendChild(st);
   }
   const labels = STEPS.map((stp, i) => {
     const el = document.createElement('div');
     el.className = 'fnd-label';
-    el.innerHTML = `<i></i><span class="ln"></span><div class="card"><span class="no">TEMEL · ${String(i + 1).padStart(2, '0')} / ${String(STEPS.length).padStart(2, '0')}</span><b></b><em></em><small></small><div class="bar"><u></u></div></div>`;
+    el.innerHTML = `<i></i><span class="ln"></span><div class="card"><div class="hd"><span class="no">${String(i + 1).padStart(2, '0')}/${String(STEPS.length).padStart(2, '0')}</span><b></b></div><em></em><div class="bar"><u></u></div></div>`;
     el.querySelector('b').textContent = stp.t;
     el.querySelector('em').textContent = stp.s;
-    el.querySelector('small').textContent = stp.w;
     labelLayer.appendChild(el);
     const A = BLOCKS[0];
-    return { el, bar: el.querySelector('.bar > u'), pos: new THREE.Vector3(A.x + stp.a[0], stp.a[1], A.z + stp.a[2]), op: 0 };
+    return {
+      el,
+      ln: el.querySelector('.ln'),
+      card: el.querySelector('.card'),
+      bar: el.querySelector('.bar > u'),
+      pos: new THREE.Vector3(A.x + stp.a[0], stp.a[1], A.z + stp.a[2]),
+      op: 0,
+    };
   });
   host.appendChild(labelLayer);
   let labelOpacity = labels.map(() => 0);
   const _v = new THREE.Vector3();
   function updateLabels() {
     const W = host.clientWidth, Hh = host.clientHeight;
+    const isMobView = W < 768;
+    const safeTop = W < 1024 ? Math.min(230, Hh * 0.34) : 84;
+    camera.updateMatrixWorld();
     labels.forEach((L, i) => {
       const o = labelOpacity[i];
       if (o < 0.01) { if (L.op !== 0) { L.el.style.opacity = '0'; L.op = 0; } return; }
       _v.copy(L.pos).project(camera);
-      const sx = (_v.x * 0.5 + 0.5) * W, sy = (-_v.y * 0.5 + 0.5) * Hh;
-      const cx = Math.min(Math.max(sx, 16), W - 390), cy = Math.min(Math.max(sy, 190), Hh - 16);
-      L.el.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px)`;
+      const sx = Math.min(Math.max((_v.x * 0.5 + 0.5) * W, 14), W - 14);
+      const sy = Math.min(Math.max((-_v.y * 0.5 + 0.5) * Hh, safeTop), Hh - 14);
+      const cardW = L.card.offsetWidth || (isMobView ? 164 : 196);
+      const cardH = L.card.offsetHeight || (isMobView ? 42 : 46);
+
+      // Kartı noktanın sağına/üstüne yerleştir; ekran kenarına veya başlığa yaklaşırsa otomatik çevir
+      let ox = isMobView ? 14 : 18;
+      if (sx + ox + cardW > W - 10) ox = Math.max(10 - sx, -cardW - (isMobView ? 12 : 16));
+      let oy = -cardH - (isMobView ? 8 : 12);
+      if (sy + oy < safeTop) oy = isMobView ? 10 : 14;
+      if (sy + oy + cardH > Hh - 10) oy = Math.min(oy, Hh - 10 - cardH - sy);
+
+      const attachX = ox >= 0 ? ox : ox + cardW;
+      const attachY = oy < 0 ? oy + cardH * 0.78 : oy + cardH * 0.22;
+      const len = Math.max(6, Math.hypot(attachX, attachY));
+      const ang = (Math.atan2(attachY, attachX) * 180) / Math.PI;
+
+      L.card.style.left = `${ox.toFixed(1)}px`;
+      L.card.style.top = `${oy.toFixed(1)}px`;
+      L.ln.style.width = `${len.toFixed(1)}px`;
+      L.ln.style.transform = `rotate(${ang.toFixed(1)}deg)`;
+      L.el.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
       L.el.style.opacity = String(o);
       L.op = o;
     });
@@ -2646,9 +2682,9 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
 
   function cameraAngle(p) {
     if (p < 0.14) return lerp(A_FINAL - 0.45, A_FINAL, smooth(p / 0.14));
-    // Toplam tek tur: Çizim fazında yarım tur, temel + yapı boyunca yarım tur (baş döndürmeyen, sakin bir dönüş)
-    if (p < 0.32) return A_FINAL + smooth((p - 0.14) / 0.18) * Math.PI;
-    if (p < 0.86) return A_FINAL + Math.PI + smooth((p - 0.32) / 0.54) * Math.PI;
+    // Toplam tek tur, eşit hızda: Çizim fazında çeyrek tur, temel + yapı boyunca üç çeyrek tur (baş döndürmeyen, sakin bir dönüş)
+    if (p < 0.32) return A_FINAL + smooth((p - 0.14) / 0.18) * Math.PI * 0.5;
+    if (p < 0.86) return A_FINAL + Math.PI * 0.5 + smooth((p - 0.32) / 0.54) * Math.PI * 1.5;
     return A_FINAL + Math.PI * 2;
   }
 
@@ -2703,6 +2739,7 @@ export async function createCity(host, { mobile = false, logoUrl = null } = {}) 
     // Kare veya dar pencerelerde (aspect < 1.35) binanın yanlardan/üstten kesilmemesi için tüm fazlarda otomatik genişlet
     const aspectFit = Math.max(1, 1.32 / Math.max(0.58, camera.aspect));
     r *= aspectFit;
+    if (p > 0.31 && p < 0.52) y *= lerp(1, aspectFit, 0.72);
 
     const a = cameraAngle(p);
     return {

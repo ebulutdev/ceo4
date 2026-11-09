@@ -16,6 +16,9 @@ _tools/links.txt
 .DS_Store
 Thumbs.db
 
-# Firebase
+# Firebase ve Ortam Değişkenleri
 .firebase/
 firebase-debug*.log
+.env
+.env.*
+!.env.example
