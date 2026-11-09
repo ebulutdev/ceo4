@@ -20,6 +20,8 @@
   let warmCity = null;
 
   const intro = $('.intro');
+  // Açılış sinyalleri: sesleri music.js çalar; animasyon sesten bağımsız kalır
+  const emitIntro = (name, detail) => { try { dispatchEvent(new CustomEvent('uf:intro-' + name, { detail })); } catch (e) {} };
 
   // ---------- Hareketsiz mod (reduced motion / kütüphane yok) ----------
   if (!hasGsap || reduce) {
@@ -36,6 +38,7 @@
       art.insertAdjacentHTML('beforeend', `<div class="project__bp">${blueprintSVG(+art.dataset.blocks || 1, +art.dataset.floors || 8, (art.dataset.labels || '').split(',').filter(Boolean))}</div>`);
     });
     initMenu(); initForm(); initAnchors();
+    emitIntro('done');
     return;
   }
 
@@ -211,6 +214,7 @@
     let unlocked = false;
     const strips = $$('.intro__strip');
     const yr = { v: 1956 };
+    let lastYear = 1956;
     // Kilometre sayacı: birler sürekli kayar; üst basamaklar alt basamak 9→0 geçerken birlikte döner
     function setYear(v) {
       [1000, 100, 10, 1].forEach((p, i) => {
@@ -243,7 +247,13 @@
       .fromTo('.intro__count', { autoAlpha: 0, y: 14, filter: 'blur(10px)' }, { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 0.9 * k, ease: 'power3.out', clearProps: 'filter' }, 0.12)
       // 1956 → 2026: yavaş başlar, giderek hızlanır; çubuk ve ışık noktası aynı eğriyle ilerler
       .addLabel('count', 0.45 * k)
-      .to(yr, { v: 2026, duration: 2.6 * k, ease: 'power3.in', onUpdate: () => setYear(yr.v) }, 'count')
+      .add(() => emitIntro('count', { duration: 2.6 * k }), 'count')
+      .to(yr, { v: 2026, duration: 2.6 * k, ease: 'power3.in', onUpdate: () => {
+        setYear(yr.v);
+        const y = Math.floor(yr.v);
+        if (y !== lastYear) { lastYear = y; emitIntro('year', { year: y, p: (y - 1956) / 70 }); }
+      } }, 'count')
+      .add(() => emitIntro('arrive'), 'count+=' + 2.6 * k)
       .to('.intro__fill', { scaleX: 1, duration: 2.6 * k, ease: 'power3.in' }, 'count')
       .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: 2.6 * k, ease: 'power3.in' }, 'count')
       .to('.intro__spark', { autoAlpha: 0, duration: 0.5, ease: 'power2.out' }, '>')
@@ -259,6 +269,7 @@
       .to('.intro__panel--l', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '-=0.18')
       .to('.intro__panel--r', { yPercent: -101, duration: 1.05, ease: 'expo.inOut', force3D: true }, '<0.09')
       .add(unlockScroll, '<0.3')
+      .add(() => emitIntro('reveal'), '<')
       .to('.film__cue', { autoAlpha: 1, duration: 0.6, ease: 'power2.out' }, '<0.2')
       .to(header, { autoAlpha: 1, duration: 0.6, ease: 'power2.out' }, '<');
 
@@ -266,6 +277,7 @@
     const skip = () => {
       if (skipped) return;
       skipped = true;
+      emitIntro('skip');
       tl.timeScale(3.8);
       if (tl.paused()) { waiting = false; tl.resume(); }
       unlockScroll();
@@ -278,6 +290,7 @@
 
     function finish() {
       introDone = true;
+      emitIntro('done');
       unlockScroll();
       intro.classList.add('is-done');
     }
