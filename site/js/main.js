@@ -133,9 +133,36 @@
     });
   }
 
+  // ---------- Sahne çıkışında yumuşak iniş ----------
+  // Sabit (pin) sahnede kaydırma yavaş ilerler; sahne bitince sayfa serbest kalır ve parmağın / tekerleğin
+  // savrulma hızı (momentum) sayfayı sonraki bölümlerin içinden hızla geçirir. Sahne hızlı bir kaydırmayla
+  // biterse savrulma kesilir ve sayfa sonraki bölümün başına yumuşakça oturur.
+  const isTouch = matchMedia('(pointer: coarse)').matches;
+  const UP_TOL = isTouch ? 80 : 40; // sahneyi geri kaydırarak bitirmek için gereken gerçek geri hareket (px)
+  let landing = false;
+  function softLand(self) {
+    if (!self || landing || collapsing || menuOpen) return;
+    const v = Math.abs(self.getVelocity ? self.getVelocity() : 0); // px/sn
+    const y = self.scroll(); // gerçek konum (Lenis'in animatedScroll'u yerel dokunmatik kaydırmada geride kalabilir)
+    const over = y - self.end;
+    if (v < (isTouch ? 650 : 1500) || over < -2 || over > innerHeight * 0.9) return;
+    landing = true;
+    const root = d.documentElement;
+    // Dokunmatikte yerel savrulmayı anında kesmenin güvenilir yolu: kaydırmayı bir an kilitlemek
+    if (isTouch) root.style.overflow = 'hidden';
+    let finished = false;
+    const done = () => { if (finished) return; finished = true; if (isTouch) root.style.overflow = ''; landing = false; };
+    requestAnimationFrame(() => {
+      const to = Math.round(self.end + 1);
+      if (lenis) lenis.scrollTo(to, { duration: 0.6, easing: (t) => 1 - Math.pow(1 - t, 3), lock: true, force: true, onComplete: done });
+      else { scrollTo(0, to); done(); }
+      setTimeout(done, 1000); // emniyet
+    });
+  }
+
   function fwd(anim, vars) {
     const { scrub = true, autoSpeed = 0, canAuto = null, ...rest } = vars;
-    let curP = 0, maxP = 0, lastScrollP = 0, lastTick = gsap.ticker.time;
+    let curP = 0, maxP = 0, lastScrollP = 0, lastTick = gsap.ticker.time, maxY = 0;
     anim.pause();
     let done = false;
     const lag = scrub === true ? 0 : scrub;
@@ -157,6 +184,7 @@
       onUpdate(self) {
         if (!done && !collapsing) {
           maxP = Math.max(maxP, self.progress);
+          maxY = Math.max(maxY, self.scroll());
           if (autoSpeed > 0) {
             const dp = self.progress - lastScrollP;
             lastScrollP = self.progress;
@@ -165,7 +193,8 @@
               go(curP);
               if (curP >= 1) finishAuto();
             }
-          } else if (self.pin && maxP >= 0.88 && self.direction === -1) {
+          } else if (self.pin && maxP >= 0.88 && self.direction === -1 && maxY - self.scroll() > UP_TOL) {
+            // Parmağı bırakırken oluşan küçük geri titreme sahneyi bitirmez; yalnızca gerçek geri kaydırma
             completeScene(self);
           } else {
             go(self.progress);
@@ -176,6 +205,7 @@
       onLeave(self) {
         if (collapsing) return;
         completeScene(self);
+        if (self.pin) softLand(self);
       },
       onRefresh(self) {
         if (rest.invalidateOnRefresh) { const p = anim.progress(); anim.invalidate().progress(0).progress(p); }
@@ -343,7 +373,7 @@
     if (video) {
       const isMob = innerWidth < 768;
       const BASE_RATE = 0.78;
-      let targetP = 0, lastScrollP = 0, filmDone = false;
+      let targetP = 0, lastScrollP = 0, filmDone = false, filmMaxY = 0;
       // Kaynak index.html'de videonun hemen altındaki satır içi betikle erkenden atanır; burada yalnızca yedek
       if (!video.getAttribute('src')) video.src = isMob ? 'assets/film/hero-m.mp4' : 'assets/film/hero-d.mp4';
       const MAX_RATE = isMob ? 2.6 : 3.4; // yüksek hızda mobil kod çözücü kare düşürür
@@ -381,6 +411,7 @@
           if (filmDone || collapsing) return;
           const dp = self.progress - lastScrollP;
           lastScrollP = self.progress;
+          filmMaxY = Math.max(filmMaxY, self.scroll());
           const dur = video.duration || 5.8;
           const vP = Math.min(1, video.currentTime / Math.max(0.1, dur - 0.04));
           if (dp > 0) {
@@ -392,7 +423,9 @@
               try { if (typeof video.fastSeek === 'function') video.fastSeek(to); else video.currentTime = to; } catch (e) {}
             }
             if (targetP >= 0.995 && self.progress >= 0.96) finishVideoFilm();
-          } else if (dp < 0 && self.direction === -1) {
+          } else if (dp < 0 && self.direction === -1 && filmMaxY - self.scroll() > UP_TOL) {
+            // Parmağı bırakırken oluşan küçük geri titreme yok sayılır (sahneyi bitirmez / başa atmaz)
+            filmMaxY = self.scroll();
             if (vP >= 0.72 || targetP >= 0.78) {
               finishVideoFilm();
             } else if (lenis && lenis.animatedScroll > 0) {
@@ -405,8 +438,8 @@
             }
           }
         },
-        onLeave() {
-          if (!collapsing) finishVideoFilm();
+        onLeave(self) {
+          if (!collapsing) { finishVideoFilm(); softLand(self); }
         },
       });
 
@@ -880,7 +913,7 @@
       if (api) api.setProgress(p);
     }
 
-    let cityDone = false, maxCityP = 0;
+    let cityDone = false, maxCityP = 0, maxCityY = 0;
     function finishCity(st) {
       if (cityDone) return;
       cityDone = true;
@@ -896,13 +929,14 @@
       onUpdate: (self) => {
         if (cityDone || collapsing) return;
         maxCityP = Math.max(maxCityP, self.progress);
-        if (maxCityP >= 0.88 && self.direction === -1) {
+        maxCityY = Math.max(maxCityY, self.scroll());
+        if (maxCityP >= 0.88 && self.direction === -1 && maxCityY - self.scroll() > UP_TOL) {
           finishCity(self);
         } else {
           update(self.progress);
         }
       },
-      onLeave: (self) => { if (!collapsing) finishCity(self); }, // tamamlanınca kilitlenir ve katlanır
+      onLeave: (self) => { if (!collapsing) { finishCity(self); softLand(self); } }, // tamamlanınca kilitlenir ve katlanır
     });
     sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) finishCity(citySt); });
 
