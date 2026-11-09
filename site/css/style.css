@@ -896,3 +896,14 @@ a.eco__row:hover .eco__t { transform: translateX(12px); }
 .sound.is-on .sound__bars i:nth-child(4) { animation-delay: -.2s; }
 @keyframes sound-eq { 0%, 100% { height: 2px; } 50% { height: 8px; } }
 @media (prefers-reduced-motion: reduce) { .sound.is-on .sound__bars i { animation: none; height: 6px; } }
+/* Tarayıcı sesi engellediyse: simgenin yanında küçük "Sesi aç" ipucu ve hafif nabız */
+.sound.is-blocked .sound__label {
+  position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%);
+  width: auto; height: auto; overflow: visible; clip: auto;
+  font-family: var(--sans); font-size: 9px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase;
+  animation: sound-hint 2.4s ease-in-out infinite;
+}
+.sound.is-blocked { opacity: 1; animation: sound-pulse 2.4s ease-in-out infinite; }
+@keyframes sound-hint { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes sound-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .5); } 60% { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); } }
+@media (prefers-reduced-motion: reduce) { .sound.is-blocked, .sound.is-blocked .sound__label { animation: none; } }
