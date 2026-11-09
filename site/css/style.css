@@ -109,7 +109,7 @@ html.intro-lock body { touch-action: none; }
 .js .intro {
   display: block; position: fixed; inset: 0; z-index: 120;
   touch-action: none;
-  animation: intro-failsafe 0s linear 14s forwards;
+  animation: intro-failsafe 0s linear 16s forwards;
 }
 @keyframes intro-failsafe { to { visibility: hidden; pointer-events: none; } }
 .intro.is-done { display: none; }

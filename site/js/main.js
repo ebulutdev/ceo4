@@ -271,6 +271,8 @@
     let unlocked = false;
     const strips = $$('.intro__strip');
     const yr = { v: 1956 };
+    // 1956 → 2026: başta çok yavaş, sona doğru hafifçe hızlanır (GSAP power2.in = kübik; ilk 10 yıl ~2,4 sn, son hız ~45 yıl/sn)
+    const COUNT_DUR = 4.6 * k, COUNT_EASE = 'power2.in';
     let lastYear = 1956;
     // Kilometre sayacı: birler sürekli kayar; üst basamaklar alt basamak 9→0 geçerken birlikte döner
     function setYear(v) {
@@ -304,15 +306,15 @@
       .fromTo('.intro__count', { autoAlpha: 0, y: 14, filter: 'blur(10px)' }, { autoAlpha: 1, y: 0, filter: 'blur(0px)', duration: 0.9 * k, ease: 'power3.out', clearProps: 'filter' }, 0.12)
       // 1956 → 2026: yavaş başlar, giderek hızlanır; çubuk ve ışık noktası aynı eğriyle ilerler
       .addLabel('count', 0.45 * k)
-      .add(() => emitIntro('count', { duration: 2.6 * k }), 'count')
-      .to(yr, { v: 2026, duration: 2.6 * k, ease: 'power3.in', onUpdate: () => {
+      .add(() => emitIntro('count', { duration: COUNT_DUR }), 'count')
+      .to(yr, { v: 2026, duration: COUNT_DUR, ease: COUNT_EASE, onUpdate: () => {
         setYear(yr.v);
         const y = Math.floor(yr.v);
         if (y !== lastYear) { lastYear = y; emitIntro('year', { year: y, p: (y - 1956) / 70 }); }
       } }, 'count')
-      .add(() => emitIntro('arrive'), 'count+=' + 2.6 * k)
-      .to('.intro__fill', { scaleX: 1, duration: 2.6 * k, ease: 'power3.in' }, 'count')
-      .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: 2.6 * k, ease: 'power3.in' }, 'count')
+      .add(() => emitIntro('arrive'), 'count+=' + COUNT_DUR)
+      .to('.intro__fill', { scaleX: 1, duration: COUNT_DUR, ease: COUNT_EASE }, 'count')
+      .fromTo('.intro__spark', { x: 0 }, { x: () => $('.intro__track').offsetWidth, duration: COUNT_DUR, ease: COUNT_EASE }, 'count')
       .to('.intro__spark', { autoAlpha: 0, duration: 0.5, ease: 'power2.out' }, '>')
       .addPause('>-0.3', () => { if (pageReady) requestAnimationFrame(() => tl.resume()); else waiting = true; })
       // Sayaç 2026'da kalır; çubuk söner, altında çizgi soldan sağa günümüze uzanır ve söz belirir (çakışma yok)
