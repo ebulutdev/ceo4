@@ -271,8 +271,8 @@
     let unlocked = false;
     const strips = $$('.intro__strip');
     const yr = { v: 1956 };
-    // 1956 → 2026: başta çok yavaş, sona doğru hafifçe hızlanır (GSAP power2.in = kübik; ilk 10 yıl ~2,4 sn, son hız ~45 yıl/sn)
-    const COUNT_DUR = 4.6 * k, COUNT_EASE = 'power2.in';
+    // 1956 → 2026: başta çok yavaş, sona doğru hafifçe hızlanır (GSAP power2.in = kübik; ilk yıl ~1,3 sn, ilk 10 yıl ~2,8 sn, son hız ~39 yıl/sn)
+    const COUNT_DUR = 5.4 * k, COUNT_EASE = 'power2.in';
     let lastYear = 1956;
     // Kilometre sayacı: birler sürekli kayar; üst basamaklar alt basamak 9→0 geçerken birlikte döner
     function setYear(v) {

@@ -141,41 +141,47 @@
       g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
     }
 
-    // 1) Saat / kilometre sayacı tıkı — yıl ilerledikçe tonu hafifçe yükselir
+    // 1) Antika sarkaçlı saat: "tik" / "tak" — kısa metal çarpma + ahşap gövde tınısı (perde yükselmez)
     let lastTick = 0;
-    function tick(p) {
+    function tick(p, year) {
       if (!ready()) return;
       const t = ctx.currentTime + 0.004;
       if (t - lastTick < 0.03) return; // en hızlı anda tıklar birbirine karışmasın
       lastTick = t;
-      const loud = 1.1 - 0.45 * p;   // hızlandıkça tek tık hafifler, toplam yoğunluk artar
+      const tock = year % 2 === 1;                 // sırayla tik / tak
+      const loud = 1.0 - 0.4 * p;                  // hızlandıkça tek tık hafifler
+      // a) Metal çarpma (çok kısa, kuru)
       const src = ctx.createBufferSource(); src.buffer = noise;
-      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3000 + 1600 * p; bp.Q.value = 5;
-      const g = ctx.createGain(); env(g, t, loud, 0.001, 0.028);
-      src.connect(bp); bp.connect(g); g.connect(master);
-      src.start(t, Math.random() * 0.9, 0.05);
-      const o = ctx.createOscillator(); o.type = 'triangle';
-      o.frequency.value = 1150 * Math.pow(2, (5 * p) / 12);
-      const og = ctx.createGain(); env(og, t, loud * 0.32, 0.001, 0.045);
-      o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.06);
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
+      const g = ctx.createGain(); env(g, t, loud * 0.55, 0.0008, 0.007);
+      src.connect(hp); hp.connect(g); g.connect(master);
+      // b) Çark / maşa tınısı: dar bantta kısa çınlama (tik ince, tak kalın)
+      const ring = ctx.createBiquadFilter(); ring.type = 'bandpass'; ring.frequency.value = tock ? 1780 : 2320; ring.Q.value = 16;
+      const rg = ctx.createGain(); env(rg, t, loud * 2.2, 0.001, 0.05);
+      src.connect(ring); ring.connect(rg); rg.connect(master); if (verb) rg.connect(verb);
+      src.start(t, Math.random() * 0.9, 0.08);
+      // c) Ahşap kasa: yumuşak, tok gövde sesi
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = tock ? 168 : 205;
+      const og = ctx.createGain(); env(og, t, loud * 0.3, 0.002, 0.045);
+      o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.08);
     }
 
-    // 2) Sayaç boyunca kabaran uğultu (sayaçla aynı eğri: yavaş başlar, sonda hızlanır)
+    // 2) Sayaç boyunca alttan gelen koyu, kısık "zaman" uğultusu (tıkları örtmez)
     let riser = null;
     function rise(dur) {
       if (!ready()) return;
       stopRise(0.05);
       const t = ctx.currentTime + 0.01, end = t + dur;
       const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
-      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
-      bp.frequency.setValueAtTime(220, t); bp.frequency.exponentialRampToValueAtTime(2600, end);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.7;
+      lp.frequency.setValueAtTime(320, t); lp.frequency.exponentialRampToValueAtTime(1100, end);
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, end);
-      src.connect(bp); bp.connect(g); g.connect(master); src.start(t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, end);
+      src.connect(lp); lp.connect(g); g.connect(master); src.start(t);
       const sub = ctx.createOscillator(); sub.type = 'sine';
-      sub.frequency.setValueAtTime(46, t); sub.frequency.exponentialRampToValueAtTime(64, end);
+      sub.frequency.setValueAtTime(49, t); sub.frequency.exponentialRampToValueAtTime(55, end);
       const sg = ctx.createGain();
-      sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.3, end);
+      sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.22, end);
       sub.connect(sg); sg.connect(master); sub.start(t);
       riser = { gains: [g, sg], srcs: [src, sub] };
     }
@@ -187,20 +193,29 @@
       riser = null;
     }
 
-    // 3) 2026'ya varış: kalın, yumuşak bir "bum" ve çan gibi parıltı — "bugüne geldik"
+    // 3) 2026'ya varış: saat kulesi çanının tek, derin vuruşu — "bugüne geldik"
+    //    Gerçek çan kısmi oranları (hum, prime, minör terz, kuint, nominal ...), her biri kendi sönümüyle
     function arrive(short) {
       stopRise(0.12);
       if (!ready()) return;
-      const t = ctx.currentTime + 0.01, k = short ? 0.55 : 1;
-      const o = ctx.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(41, t + 0.55);
-      const g = ctx.createGain(); env(g, t, 0.34 * k, 0.012, 1.7 * k);
-      o.connect(g); g.connect(master); if (verb) g.connect(verb); o.start(t); o.stop(t + 2);
-      [1318.5, 1975.5, 2637].forEach((f, i) => {
-        const s = ctx.createOscillator(); s.type = 'sine'; s.frequency.value = f;
-        const sg = ctx.createGain(); env(sg, t + 0.03 + i * 0.045, (0.07 - i * 0.015) * k, 0.012, 2.8 * k);
-        s.connect(sg); sg.connect(master); if (verb) sg.connect(verb); s.start(t); s.stop(t + 3.4);
+      const t = ctx.currentTime + 0.01, k = short ? 0.5 : 1;
+      const f0 = 146.83; // D3 — derin kule çanı
+      const P = [
+        [0.5, 0.30, 7.0], [1.0, 0.26, 5.0], [1.003, 0.10, 5.0], [1.19, 0.16, 3.9],
+        [1.5, 0.08, 3.1], [2.0, 0.17, 3.6], [2.006, 0.06, 3.6], [2.74, 0.05, 2.1],
+        [3.0, 0.06, 1.8], [4.07, 0.03, 1.3],
+      ];
+      P.forEach(([r, a, dcy]) => {
+        const s = ctx.createOscillator(); s.type = 'sine'; s.frequency.value = f0 * r;
+        const sg = ctx.createGain(); env(sg, t, a * k, 0.004, dcy * k);
+        s.connect(sg); sg.connect(master); if (verb) sg.connect(verb);
+        s.start(t); s.stop(t + dcy * k + 0.1);
       });
+      // Tokmak darbesi (vuruşun ilk anı)
+      const n = ctx.createBufferSource(); n.buffer = noise;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1150; bp.Q.value = 1.2;
+      const ng = ctx.createGain(); env(ng, t, 0.2 * k, 0.001, 0.03);
+      n.connect(bp); bp.connect(ng); ng.connect(master); n.start(t, Math.random() * 0.9, 0.06);
     }
 
     // ---------- Sahne efektleri: hafif, müziğin altında kalır ----------
@@ -299,7 +314,7 @@
 
     let skipped = false;
     addEventListener('uf:intro-count', (e) => { if (!skipped) rise((e.detail && e.detail.duration) || 2.6); });
-    addEventListener('uf:intro-year', (e) => { if (!skipped && e.detail) tick(e.detail.p); });
+    addEventListener('uf:intro-year', (e) => { if (!skipped && e.detail) tick(e.detail.p, e.detail.year); });
     addEventListener('uf:intro-arrive', () => arrive(skipped));
     addEventListener('uf:intro-skip', () => { skipped = true; stopRise(0.15); });
     return { resume, ready };
