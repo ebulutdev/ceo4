@@ -24,8 +24,9 @@
   const emitIntro = (name, detail) => { try { dispatchEvent(new CustomEvent('uf:intro-' + name, { detail })); } catch (e) {} };
   // Sahne ses efekti sinyali (sesi music.js çalar). Sahne katlanırken gelen yapay ilerlemeler sessiz geçer.
   let collapsingNow = () => false;
+  let navigatingNow = () => false;
   const sfx = (type, detail) => {
-    if (collapsingNow()) return;
+    if (collapsingNow() || navigatingNow()) return; // katlama ve bölüme atlama sırasındaki yapay ilerlemeler sessiz
     try { dispatchEvent(new CustomEvent('uf:sfx', { detail: { type, ...(detail || {}) } })); } catch (e) {}
   };
   // Sabit sahne zaman çizelgesi belirli bir adıma geçtiğinde (ileri / geri) tek sinyal verir
@@ -81,6 +82,12 @@
   collapsingNow = () => collapsing;
   let collapseScheduled = false;
   const sceneChecks = []; // katlamadan sonra 'sonu geçilmiş ama bitmemiş' sahneleri tamamlar
+  // Menüden / bağlantıdan bir bölüme atlanırken hedefin üstünde kalan bitmemiş sabit sahneler önceden
+  // tamamlanıp katlanır. Aksi hâlde kaydırma bu sahnelerin içinden geçer ve sayfa hedefe varmadan takılır.
+  const sceneSkips = [];
+  let navigating = false; // bölüme atlama sürerken sahne çıkışı müdahaleleri (softLand) devre dışı
+  navigatingNow = () => navigating;
+  let collapsedAt = 0; // son katlamanın zamanı: konum düzeltmesi 'yukarı kaydırma' sanılmasın (üst menü titremesi)
   function queueCollapse(st) {
     st._done = true;
     collapseQ.add(st);
@@ -91,9 +98,27 @@
       queueMicrotask(() => {
         collapseScheduled = false;
         if (lenis && lenis.isScrolling) return;
-        runCollapse();
+        tryCollapse();
       });
     }
+  }
+  // Mobilde katlama (sayfa kısalması + ScrollTrigger.refresh) yalnızca parmak ekrandan kalkmış ve sayfa gerçekten
+  // durmuşken yapılır. Parmak ekrandayken ya da iOS savrulması (momentum) yavaşça sürerken scrollTo çağrısı
+  // savrulmayı aniden keser ve yenileme (refresh) dokunuşun ortasına denk gelir: kasma / ani durma hissi.
+  let touchActive = false;
+  addEventListener('touchstart', () => { touchActive = true; }, { passive: true });
+  const touchOff = () => { touchActive = false; setTimeout(tryCollapse, 260); };
+  addEventListener('touchend', touchOff, { passive: true });
+  addEventListener('touchcancel', touchOff, { passive: true });
+  function tryCollapse() {
+    if (collapsing || !collapseQ.size) return;
+    if (touchActive || landing || (lenis && lenis.isScrolling === 'smooth')) return;
+    const y0 = scrollY;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      // Hâlâ hareket ediyorsa vazgeç: kaydırma durunca 'scrollEnd' yeniden gelir
+      if (touchActive || landing || Math.abs(scrollY - y0) > 0.5) return;
+      runCollapse();
+    }));
   }
   function runCollapse() {
     if (collapsing || !collapseQ.size) return;
@@ -128,6 +153,7 @@
     // Konum düzeltildikten sonra sahneler doğru ilerleme değerleriyle yeniden olay almaya başlar
     requestAnimationFrame(() => {
       collapsing = false;
+      collapsedAt = performance.now();
       ScrollTrigger.update();
       sceneChecks.forEach((fn) => fn());
     });
@@ -136,28 +162,29 @@
   // ---------- Sahne çıkışında yumuşak iniş ----------
   // Sabit (pin) sahnede kaydırma yavaş ilerler; sahne bitince sayfa serbest kalır ve parmağın / tekerleğin
   // savrulma hızı (momentum) sayfayı sonraki bölümlerin içinden hızla geçirir. Sahne hızlı bir kaydırmayla
-  // biterse savrulma kesilir ve sayfa sonraki bölümün başına yumuşakça oturur.
+  // biterse yalnızca savrulma kesilir; sayfa olduğu yerde durur.
+  // Sayfa ASLA ters yöne (geri) çekilmez: kullanıcının başlatmadığı, ters yönlü hareket baş döndürür ve
+  // üst menüyü 'yukarı kaydırılıyor' sanıp her sahne sonunda bir göster / bir gizle yapıyordu.
   const isTouch = matchMedia('(pointer: coarse)').matches;
   const UP_TOL = isTouch ? 80 : 40; // sahneyi geri kaydırarak bitirmek için gereken gerçek geri hareket (px)
   let landing = false;
   function softLand(self) {
-    if (!self || landing || collapsing || menuOpen) return;
+    if (!self || landing || collapsing || menuOpen || navigating) return;
     const v = Math.abs(self.getVelocity ? self.getVelocity() : 0); // px/sn
     const y = self.scroll(); // gerçek konum (Lenis'in animatedScroll'u yerel dokunmatik kaydırmada geride kalabilir)
     const over = y - self.end;
     if (v < (isTouch ? 650 : 1500) || over < -2 || over > innerHeight * 0.9) return;
     landing = true;
-    const root = d.documentElement;
-    // Dokunmatikte yerel savrulmayı anında kesmenin güvenilir yolu: kaydırmayı bir an kilitlemek
-    if (isTouch) root.style.overflow = 'hidden';
-    let finished = false;
-    const done = () => { if (finished) return; finished = true; if (isTouch) root.style.overflow = ''; landing = false; };
-    requestAnimationFrame(() => {
-      const to = Math.round(self.end + 1);
-      if (lenis) lenis.scrollTo(to, { duration: 0.6, easing: (t) => 1 - Math.pow(1 - t, 3), lock: true, force: true, onComplete: done });
-      else { scrollTo(0, to); done(); }
-      setTimeout(done, 1000); // emniyet
-    });
+    if (isTouch) {
+      // Dokunmatikte yerel savrulmayı kesmenin güvenilir yolu: kaydırmayı iki kare boyunca kilitlemek
+      const root = d.documentElement;
+      root.style.overflow = 'hidden';
+      requestAnimationFrame(() => requestAnimationFrame(() => { root.style.overflow = ''; landing = false; }));
+    } else {
+      // Tekerlek: Lenis'in ileriye birikmiş yumuşak kaydırma hedefi bulunduğu yere çekilir (geri hareket yok)
+      if (lenis) lenis.scrollTo(lenis.animatedScroll, { immediate: true, force: true });
+      landing = false;
+    }
   }
 
   function fwd(anim, vars) {
@@ -166,9 +193,13 @@
     anim.pause();
     let done = false;
     const lag = scrub === true ? 0 : scrub;
+    // Gecikmeli (scrub) takip tek bir kalıcı tween ile yapılır: her kaydırma olayında yeni gsap.to oluşturmak
+    // mobilde saniyede 60–120 tween + çöp toplama demekti (kaydırma sırasında mikro takılmalar)
+    const proxy = { p: anim.progress() };
+    const qp = lag ? gsap.quickTo(proxy, 'p', { duration: lag, ease: 'power1.out', onUpdate: () => anim.progress(proxy.p) }) : null;
     const go = (p) => {
       if (!lag) anim.progress(p);
-      else gsap.to(anim, { progress: p, duration: lag, ease: 'power1.out', overwrite: true });
+      else qp(p);
     };
     function completeScene(self) {
       if (done) return;
@@ -216,6 +247,7 @@
       if (done || (!st.isActive && st.progress < 1)) return;
       if (st.progress >= 1) completeScene(st);
     });
+    if (rest.pin) sceneSkips.push((y) => { if (!done && st.start < y - 1) completeScene(st); });
     function finishAuto() {
       if (done) return;
       curP = 1;
@@ -241,7 +273,7 @@
   html.classList.add('lenis');
   lenis.stop();
   lenis.on('scroll', ScrollTrigger.update);
-  ScrollTrigger.addEventListener('scrollEnd', runCollapse);
+  ScrollTrigger.addEventListener('scrollEnd', tryCollapse);
   gsap.ticker.add((t) => lenis.raf(t * 1000));
   gsap.ticker.lagSmoothing(0);
 
@@ -407,7 +439,7 @@
         trigger: sec,
         start: 'top top',
         end: () => (isDesk() ? '+=200%' : '+=165%'),
-        pin: '.film__pin',
+        pin: '.film__pin', anticipatePin: 1,
         invalidateOnRefresh: true,
         onUpdate(self) {
           if (filmDone || collapsing) return;
@@ -426,18 +458,11 @@
             }
             if (targetP >= 0.995 && self.progress >= 0.96) finishVideoFilm();
           } else if (dp < 0 && self.direction === -1 && filmMaxY - self.scroll() > UP_TOL) {
-            // Parmağı bırakırken oluşan küçük geri titreme yok sayılır (sahneyi bitirmez / başa atmaz)
+            // Parmağı bırakırken oluşan küçük geri titreme yok sayılır (sahneyi bitirmez)
             filmMaxY = self.scroll();
-            if (vP >= 0.72 || targetP >= 0.78) {
-              finishVideoFilm();
-            } else if (lenis && lenis.animatedScroll > 0) {
-              lastScrollP = 0;
-              lenis.animatedScroll = 0;
-              lenis.targetScroll = 0;
-              if (lenis.animate) lenis.animate.stop();
-              lenis.setScroll(0);
-              scrollTo(0, 0);
-            }
+            if (vP >= 0.72 || targetP >= 0.78) finishVideoFilm();
+            // Erken geri kaydırmada sayfa artık en üste fırlatılmaz: kullanıcı nereye kaydırdıysa orada kalır,
+            // video kendi hızıyla akmaya devam eder (önceden 72 px geri harekette konum 328 → 0'a atlıyordu)
           }
         },
         onLeave(self) {
@@ -455,6 +480,7 @@
         if (warmCity) warmCity();
         queueCollapse(filmSt);
       }
+      sceneSkips.push((y) => { if (!filmDone && filmSt.start < y - 1) finishVideoFilm(); });
 
       function tickVideoFilm() {
         if (filmDone || collapsing || html.classList.contains('intro-lock')) return;
@@ -742,7 +768,7 @@
     fwd(filmTl, {
       trigger: sec, start: 'top top',
       end: () => (isDesk() ? '+=200%' : '+=165%'),
-      pin: '.film__pin', scrub: true, autoSpeed: 1 / (isMob ? 7.2 : 8.2),
+      pin: '.film__pin', anticipatePin: 1, scrub: true, autoSpeed: 1 / (isMob ? 7.2 : 8.2),
       canAuto: () => {
         const nextF = Math.min(cfg.n - 1, want + 1);
         if (bitmaps.has(want) && (bitmaps.has(nextF) || want >= cfg.n - 1)) { stallFrames = 0; return true; }
@@ -804,7 +830,7 @@
     fwd(tl, {
       trigger: sec, start: 'top top',
       end: () => `+=${chs.length * 75}%`,
-      pin: '.story__pin', scrub: 0.25,
+      pin: '.story__pin', anticipatePin: 1, scrub: 0.25,
       invalidateOnRefresh: true,
     });
     imgs.forEach((im, i) => {
@@ -846,7 +872,7 @@
     fwd(tl, {
       trigger: sec, start: 'top top',
       end: () => `+=${items.length * 65}%`,
-      pin: '.lead__pin', scrub: 0.25,
+      pin: '.lead__pin', anticipatePin: 1, scrub: 0.25,
       invalidateOnRefresh: true,
     });
     tl.to({}, { duration: 0.45 }, 0);
@@ -926,7 +952,7 @@
     const citySt = ScrollTrigger.create({
       trigger: sec, start: 'top top',
       end: () => (isDesk() ? '+=430%' : '+=350%'),
-      pin: '.city__pin', pinSpacing: true,
+      pin: '.city__pin', pinSpacing: true, anticipatePin: 1,
       invalidateOnRefresh: true,
       onUpdate: (self) => {
         if (cityDone || collapsing) return;
@@ -941,6 +967,7 @@
       onLeave: (self) => { if (!collapsing) { finishCity(self); softLand(self); } }, // tamamlanınca kilitlenir ve katlanır
     });
     sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) finishCity(citySt); });
+    sceneSkips.push((y) => { if (!cityDone && citySt.start < y - 1) finishCity(citySt); });
 
     const gl = (() => { try { const c = d.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
     if (!gl) { sec.classList.add('is-fallback'); return; }
@@ -975,20 +1002,41 @@
     let active = 0;
 
     // Sayaç ve çizgi, kaydırma anında değil animasyonun her karesinde güncellenir (yumuşak geçişte doğru kart)
+    // Kart ölçüleri yalnızca yenilemede okunur: her karede offsetLeft okumak (az önce yazılan stil yüzünden)
+    // zorunlu stil/yerleşim hesabı tetikliyordu
+    let centers = [], total = 1, vw2 = 0, snaps = [0, 1];
+    const measure = () => {
+      total = dist() || 1;
+      vw2 = viewport.clientWidth / 2;
+      centers = cards.map((c) => c.offsetLeft + c.offsetWidth / 2);
+      const x0 = cards[0].offsetLeft;
+      snaps = [...cards.map((c) => Math.min(1, (c.offsetLeft - x0) / total)), 1];
+    };
+    measure();
+    const setBar = gsap.quickSetter(bar, 'scaleX');
     const syncMeta = () => {
       const x = gsap.getProperty(track, 'x');
-      const total = dist() || 1;
-      gsap.set(bar, { scaleX: Math.min(1, -x / total) });
-      const mid = viewport.clientWidth / 2 - x;
+      setBar(Math.min(1, -x / total));
+      const mid = vw2 - x;
       let best = 0, bestD = Infinity;
-      cards.forEach((c, i) => { const dd = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid); if (dd < bestD) { bestD = dd; best = i; } });
+      centers.forEach((cx, i) => { const dd = Math.abs(cx - mid); if (dd < bestD) { bestD = dd; best = i; } });
       if (best !== active) { sfx('card', { i: best, dir: best > active ? 1 : -1 }); active = best; gsap.to(nums, { yPercent: -100 * best, duration: 0.6, ease: 'power3.out', overwrite: true }); }
     };
+    // Mobilde kartlar 1:1 kaydırmayla akınca tek bir parmak savrulması 2–3 kartı birden geçiriyor ve gecikmeli
+    // (scrub) takip kartları parmak durduktan sonra da kaydırıyordu: "kartlar birbirine geçiyor / kayıyor".
+    // Dokunmatikte her kart için daha uzun kaydırma mesafesi, daha kısa gecikme ve kaydırma bitince en yakın
+    // karta yumuşak oturma (snap) kullanılır.
+    const touchCat = matchMedia('(pointer: coarse)').matches;
     const slide = gsap.fromTo(track, { x: 0 }, {
       x: () => -dist(), ease: 'none', onUpdate: syncMeta,
       scrollTrigger: {
-        trigger: sec, start: 'top top', end: () => `+=${dist()}`,
-        pin: '.catalog__pin', scrub: 0.6, invalidateOnRefresh: true,
+        trigger: sec, start: 'top top', end: () => `+=${Math.round(dist() * (touchCat ? 1.9 : 1.15))}`,
+        pin: '.catalog__pin', anticipatePin: 1, scrub: touchCat ? 0.3 : 0.6, invalidateOnRefresh: true,
+        onRefresh: measure,
+        snap: touchCat ? {
+          snapTo: (v) => snaps.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)),
+          duration: { min: 0.22, max: 0.5 }, delay: 0.08, ease: 'power2.inOut', inertia: false,
+        } : false,
       },
     });
 
@@ -1021,7 +1069,7 @@
     fwd(tl, {
       trigger: '.quotes', start: 'top top',
       end: () => `+=${quotes.length * 65}%`,
-      pin: '.quotes__pin', scrub: 0.25,
+      pin: '.quotes__pin', anticipatePin: 1, scrub: 0.25,
       invalidateOnRefresh: true,
     });
     tl.to({}, { duration: 0.45 });
@@ -1233,6 +1281,8 @@
     onUpdate(self) {
       progressBar.style.setProperty('--p', self.progress.toFixed(4));
       const y = self.scroll();
+      // Katlama / savrulma kesme anındaki konum düzeltmeleri kullanıcı hareketi değildir: üst menü değişmez
+      if (collapsing || landing || performance.now() - collapsedAt < 250) return;
       header.classList.toggle('is-hidden', !menuOpen && self.direction === 1 && y > innerHeight * 0.6);
     },
   });
@@ -1273,9 +1323,31 @@
       if (target === null) return;
       e.preventDefault();
       const go = () => {
-        if (lenis) lenis.scrollTo(target, { duration: 1.5, easing: (t) => 1 - Math.pow(1 - t, 4) });
-        else if (target === 0) scrollTo({ top: 0 });
-        else target.scrollIntoView();
+        if (!lenis) {
+          if (target === 0) scrollTo({ top: 0 });
+          else target.scrollIntoView();
+          return;
+        }
+        const run = () => {
+          navigating = true;
+          let ended = false;
+          const end = () => { if (ended) return; ended = true; navigating = false; };
+          lenis.scrollTo(target, { duration: 1.5, easing: (t) => 1 - Math.pow(1 - t, 4), onComplete: end });
+          setTimeout(end, 1900); // emniyet
+        };
+        if (target !== 0) {
+          // Hedefin üstündeki bitmemiş sabit sahneler son hâlinde tamamlanır ve hemen katlanır; böylece
+          // kaydırma hiçbir sahnenin içinden geçmez ve doğrudan hedefe varır
+          const y = target.getBoundingClientRect().top + scrollY;
+          navigating = true;
+          sceneSkips.forEach((fn) => fn(y));
+          if (collapseQ.size) {
+            runCollapse();
+            requestAnimationFrame(() => requestAnimationFrame(run)); // katlama sonrası konumlar otursun
+            return;
+          }
+        }
+        run();
       };
       if (menuOpen) closeMenu(go); else go();
     }));
@@ -1303,9 +1375,19 @@
     });
 
     let menuTl = null;
+    // Menü açıkken Lenis durdurulur ve tüm dokunarak kaydırmaları engeller. Menü ekrana sığmadığında
+    // (yatay telefon, kısa ekran) içerik parmakla kaydırılabilsin diye Lenis'e bu alanı bırakması söylenir.
+    // Sığdığında nitelik eklenmez; aksi hâlde dokunuş arkadaki sayfayı kaydırır.
+    const menuInner = $('.menu__inner', menu);
+    const syncMenuScroll = () => {
+      if (!menuOpen || !menuInner) return;
+      menuInner.toggleAttribute('data-lenis-prevent', menuInner.scrollHeight > menuInner.clientHeight + 1);
+    };
+    addEventListener('resize', syncMenuScroll, { passive: true });
     function openMenu() {
       menuOpen = true;
       menu.hidden = false;
+      syncMenuScroll();
       html.classList.add('menu-open');
       btn.setAttribute('aria-expanded', 'true');
       label.textContent = label.dataset.close;

@@ -230,6 +230,7 @@ html.intro-lock body { touch-action: none; }
   display: flex; flex-direction: column; justify-content: center;
   padding: calc(84px + env(safe-area-inset-top)) var(--gutter) calc(24px + env(safe-area-inset-bottom));
   height: 100svh; max-height: 100svh; overflow-y: auto;
+  overscroll-behavior: contain; /* menü sonuna gelince kaydırma arkadaki sayfaya geçmez */
 }
 .menu__list { margin-top: clamp(14px, 2.2svh, 24px); }
 .menu__list li { overflow: hidden; border-top: 1px solid var(--line-dark); }
@@ -263,6 +264,13 @@ html.intro-lock body { touch-action: none; }
 .progress__bar { position: relative; width: 1px; height: 76px; background: rgba(255, 255, 255, .25); overflow: hidden; }
 .progress__bar::after { content: ""; position: absolute; inset: 0; background: #fff; transform: scaleY(var(--p, 0)); transform-origin: top; }
 .progress__num { display: none; font-size: 10px; letter-spacing: .2em; font-variant-numeric: tabular-nums; }
+/* Dokunmatik / küçük ekran: mix-blend-mode yok. Sabit (fixed) bir harmanlama katmanı video ve 3D tuvalin
+   üzerinde her karede tüm alttaki katmanı yeniden harmanlatır; mobil GPU'da kaydırma takılmasının ana kaynağı. */
+@media (max-width: 1023px), (pointer: coarse) {
+  .progress { mix-blend-mode: normal; }
+  .progress__bar { background: rgba(142, 146, 150, .32); }
+  .progress__bar::after { background: #8E9296; }
+}
 @media (min-width: 1024px) {
   .progress { right: 26px; gap: 12px; }
   .progress__bar { height: 120px; }
