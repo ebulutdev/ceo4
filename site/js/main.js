@@ -110,15 +110,30 @@
   const touchOff = () => { touchActive = false; setTimeout(tryCollapse, 260); };
   addEventListener('touchend', touchOff, { passive: true });
   addEventListener('touchcancel', touchOff, { passive: true });
+  // Koşullar uygun değilse vazgeçmek yerine kısa aralıklarla yeniden denenir. Önceden tek bir 'scrollEnd'
+  // fırsatı kaçarsa (ör. Lenis'in yumuşak kaydırma kuyruğu o an sürüyorsa) katlama bir sonraki duruşa
+  // kalıyor, bu arada yukarı kaydıran ziyaretçi bitmiş sahnenin boş mesafesinde 'takılıyordu'.
+  let collapseRetry = 0;
+  const retryCollapse = () => {
+    if (collapseRetry || !collapseQ.size) return;
+    collapseRetry = setTimeout(() => { collapseRetry = 0; tryCollapse(); }, 180);
+  };
   function tryCollapse() {
     if (collapsing || !collapseQ.size) return;
-    if (touchActive || landing || (lenis && lenis.isScrolling === 'smooth')) return;
+    if (touchActive || landing || (lenis && lenis.isScrolling === 'smooth')) { retryCollapse(); return; }
     const y0 = scrollY;
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      // Hâlâ hareket ediyorsa vazgeç: kaydırma durunca 'scrollEnd' yeniden gelir
-      if (touchActive || landing || Math.abs(scrollY - y0) > 0.5) return;
+      // Hâlâ hareket ediyorsa biraz sonra yeniden dene
+      if (touchActive || landing || Math.abs(scrollY - y0) > 0.5) { retryCollapse(); return; }
       runCollapse();
     }));
+  }
+  // Bitmiş ama henüz katlanmamış bir sahneye yukarı kaydırarak geri girilirse beklemeden hemen katlanır.
+  // Aksi hâlde sahnenin tüm sabitleme mesafesi (masaüstünde kentte ~4 ekran boyu) ekranda hiçbir şey
+  // değişmeden geri kaydırılır: "kaç kez kaydırsam da yukarı çıkmıyor" hatası. Konum düzeltmesi aynı
+  // anda yapıldığı için görüntü zıplamaz; sayfa kaldığı yerden yukarı akmaya devam eder.
+  function collapseOnReturn(st) {
+    if (st && st._done && collapseQ.has(st) && !collapsing) runCollapse();
   }
   function runCollapse() {
     if (collapsing || !collapseQ.size) return;
@@ -234,8 +249,14 @@
           } else {
             go(self.progress);
           }
+        } else if (done && self.pin && self.direction === -1) {
+          collapseOnReturn(self); // bitmiş sahnede geri kaydırma: ölü mesafe bırakmadan hemen katla
         }
         if (rest.onUpdate) rest.onUpdate(self);
+      },
+      onEnterBack(self) {
+        if (self.pin) collapseOnReturn(self);
+        if (rest.onEnterBack) rest.onEnterBack(self);
       },
       onLeave(self) {
         if (collapsing) return;
@@ -451,6 +472,7 @@
         pin: '.film__pin', anticipatePin: 1,
         invalidateOnRefresh: true,
         onUpdate(self) {
+          if (filmDone && self.direction === -1) collapseOnReturn(self);
           if (filmDone || collapsing) return;
           const dp = self.progress - lastScrollP;
           lastScrollP = self.progress;
@@ -477,6 +499,7 @@
         onLeave(self) {
           if (!collapsing) { finishVideoFilm(); softLand(self); }
         },
+        onEnterBack: (self) => collapseOnReturn(self),
       });
 
       function finishVideoFilm() {
@@ -962,7 +985,8 @@
       if (soft && prog < 1) {
         // Geri kaydırmada kent son hâline bir anda atlamaz: kalan fazlar kısa ve sakin bir geçişle tamamlanır
         const o = { p: prog };
-        gsap.to(o, { p: 1, duration: 0.9, ease: 'power2.inOut', onUpdate: () => update(o.p), onComplete: () => queueCollapse(st) });
+        gsap.to(o, { p: 1, duration: 0.9, ease: 'power2.inOut', onUpdate: () => update(o.p) });
+        queueCollapse(st);
         return;
       }
       update(1);
@@ -974,6 +998,7 @@
       pin: '.city__pin', pinSpacing: true, anticipatePin: 1,
       invalidateOnRefresh: true,
       onUpdate: (self) => {
+        if (cityDone && self.direction === -1) collapseOnReturn(self);
         if (cityDone || collapsing) return;
         maxCityP = Math.max(maxCityP, self.progress);
         maxCityY = Math.max(maxCityY, self.scroll());
@@ -984,6 +1009,7 @@
         }
       },
       onLeave: (self) => { if (!collapsing) { finishCity(self); softLand(self); } }, // tamamlanınca kilitlenir ve katlanır
+      onEnterBack: (self) => collapseOnReturn(self),
     });
     sceneChecks.push(() => { if (!cityDone && citySt.progress >= 1) finishCity(citySt); });
     sceneSkips.push((y) => { if (!cityDone && citySt.start < y - 1) finishCity(citySt); });
