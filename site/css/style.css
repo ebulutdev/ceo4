@@ -292,7 +292,8 @@ html.intro-lock body { touch-action: none; }
 .film__shade { position: absolute; inset: 0; z-index: 1; background: radial-gradient(ellipse at 50% 52%, rgba(10, 11, 12, .64) 0%, rgba(10, 11, 12, .85) 100%); opacity: 0; will-change: opacity; }
 .no-motion .film__shade { opacity: 1; }
 .film__cue {
-  position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(24px + env(safe-area-inset-bottom) + var(--vb)); margin: 0 auto;
+  position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(24px + env(safe-area-inset-bottom)); margin: 0 auto;
+  transform: translate3d(0, calc(-1 * var(--vb)), 0); transition: transform .45s var(--ease-out);
   display: flex; justify-content: space-between; align-items: center;
 }
 .film__title {
@@ -331,7 +332,7 @@ html.intro-lock body { touch-action: none; }
 .story { position: relative; background: var(--anthracite); color: var(--white); }
 .story__pin { position: relative; height: var(--pin-h); min-height: 540px; overflow: hidden; }
 .story__media, .story__img { position: absolute; inset: 0; }
-.story__img { overflow: hidden; will-change: clip-path; }
+.story__img { overflow: hidden; will-change: opacity; }
 .story__img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 26%; will-change: transform; }
 .story__bg { display: none; }
 /* Dikey çekimler masaüstünde kırpılmadan, tam çözünürlükte sağda durur; zemin aynı görselin bulanık hâli */
@@ -354,7 +355,9 @@ html.intro-lock body { touch-action: none; }
 .story__track { display: block; height: 1.1em; overflow: hidden; font-size: 22px; line-height: 1.1; }
 .story__track span { display: block; height: 1.1em; }
 .story__total { font-size: 13px; color: var(--silver); padding-bottom: 2px; }
-.story__chapters { position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(44px + env(safe-area-inset-bottom) + var(--vb)); margin: 0 auto; }
+/* Safari araç çubuğu açılıp kapanınca (--vb değişir) alta yaslı yazılar zıplamasın: bottom yerine transform ile
+   kaydırılır ve kısa bir geçişle yumuşakça yer değiştirir (yerleşim hesabı yok, yalnızca GPU) */
+.story__chapters { position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(44px + env(safe-area-inset-bottom)); margin: 0 auto; transform: translate3d(0, calc(-1 * var(--vb)), 0); transition: transform .45s var(--ease-out); }
 .chapter { position: absolute; left: var(--gutter); right: var(--gutter); bottom: 0; }
 .chapter__tag { font-size: 10.5px; font-weight: 500; letter-spacing: .3em; text-transform: uppercase; color: rgba(255, 255, 255, .86); text-shadow: 0 1px 10px rgba(0, 0, 0, .65); }
 .chapter__title { margin-top: 12px; font-family: var(--serif); font-weight: 500; font-size: clamp(3.4rem, min(16vw, 15svh), 10.5rem); line-height: .98; letter-spacing: -.02em; text-shadow: 0 3px 24px rgba(0, 0, 0, .6); }
@@ -371,7 +374,7 @@ html.intro-lock body { touch-action: none; }
       linear-gradient(180deg, rgba(14, 15, 16, .55) 0%, rgba(14, 15, 16, 0) 24%),
       linear-gradient(90deg, rgba(14, 15, 16, .88) 0%, rgba(14, 15, 16, .42) 44%, rgba(14, 15, 16, 0) 66%);
   }
-  .story__chapters { bottom: calc(11vh + var(--vb)); }
+  .story__chapters { bottom: 11vh; }
   .chapter__line { font-size: 19px; }
   .story__track { font-size: 30px; }
 }
@@ -396,6 +399,18 @@ html.intro-lock body { touch-action: none; }
   color: #7A7D82; line-height: 1.45; flex-shrink: 0;
 }
 .lead__values li { position: relative; white-space: nowrap; }
+/* Mobil / tablet: içerik ekranın ortasında küçük bir blok olarak kalmasın. Başlık üstte, değerler en altta
+   sabitlenir; aradaki alanı büyük sıra numarası ve büyütülmüş ilke metni doldurur (ölçüler ekran yüksekliğine
+   göre ölçeklenir, 568 px'lik küçük ekranlara da sığar). */
+@media (max-width: 1023px) {
+  .lead__inner { justify-content: space-between; gap: 0; padding-top: calc(88px + env(safe-area-inset-top)); }
+  .lead__stage { flex: 1; justify-content: center; gap: clamp(10px, 2.4svh, 26px); padding: clamp(12px, 3svh, 32px) 0; }
+  .lead__num { --h: clamp(5.6rem, min(40vw, 20svh), 11rem); }
+  .lead__list { min-height: clamp(9.8rem, 26svh, 15rem); }
+  .principle__title { font-size: clamp(2.3rem, min(10.4vw, 6.4svh), 4.2rem); }
+  .principle__line { margin-top: clamp(10px, 1.8svh, 18px); font-size: clamp(15.5px, 4.3vw, 18px); max-width: 30ch; }
+  .lead__values { font-size: 10px; gap: 8px 28px; padding-top: 16px; }
+}
 .no-motion .lead__pin { height: auto; }
 .no-motion .lead__num { display: none; }
 .no-motion .lead__list { display: grid; gap: 48px; min-height: 0; padding: 40px 0; }
@@ -427,6 +442,21 @@ html.intro-lock body { touch-action: none; }
 .quote figcaption { margin-top: 22px; font-size: 11px; font-weight: 500; letter-spacing: .3em; text-transform: uppercase; color: var(--platinum); }
 .quote blockquote p em { font-style: italic; color: #E6D3A6; }
 .quote__role { display: block; margin-top: 8px; font-size: 10px; letter-spacing: .26em; color: rgba(228, 225, 218, .55); }
+.quotes__count { display: flex; align-items: flex-end; gap: 8px; margin-top: 28px; font-family: var(--serif); color: var(--white); }
+.quotes__track { display: block; height: 1.1em; overflow: hidden; font-size: 22px; line-height: 1.1; }
+.quotes__track span { display: block; height: 1.1em; }
+.quotes__total { font-size: 13px; color: var(--silver); padding-bottom: 2px; }
+/* Mobil / tablet: söz ekranın ortasında küçük kalmasın. Başlık üstte, sayaç en altta; aradaki alanın tamamı
+   söze ayrılır ve söz bu alanda dikey ortalanır, yazı ekran boyuna göre büyür. */
+@media (max-width: 1023px) {
+  .quotes__pin { justify-content: flex-start; padding-top: calc(88px + env(safe-area-inset-top)); }
+  .quotes__inner { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .quotes__stage { flex: 1; min-height: 0; margin-top: 0; }
+  .quote blockquote p { font-size: clamp(2.1rem, min(10.6vw, 6.2svh), 4.4rem); line-height: 1.08; max-width: none; }
+  .quote figcaption { margin-top: clamp(18px, 3svh, 30px); }
+  .quotes__count { margin-top: 0; }
+}
+.no-motion .quotes__count { display: none; }
 .no-motion .quotes__pin { height: auto; padding: var(--section) var(--gutter); }
 .no-motion .quotes__stage { min-height: 0; height: auto; display: grid; gap: 64px; }
 .no-motion .quote { position: static; transform: none; }
@@ -896,7 +926,7 @@ a.eco__row:hover .eco__t { transform: translateX(12px); }
 
 /* ---------- Arka plan müziği: ses aç / kapat (küçük simge) ---------- */
 .sound {
-  position: fixed; z-index: 95; right: 16px; bottom: calc(64px + env(safe-area-inset-bottom));
+  position: fixed; z-index: 80; right: 16px; bottom: calc(64px + env(safe-area-inset-bottom)); /* menünün (85) ve üst menünün (90) altında */
   display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
   border: 1px solid rgba(255, 255, 255, .5); border-radius: 50%; background: rgba(14, 15, 16, .38);
   color: #fff; cursor: pointer; opacity: .85;

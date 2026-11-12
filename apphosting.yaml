@@ -5,3 +5,30 @@ runConfig:
   concurrency: 80
   cpu: 1
   memoryMiB: 512
+
+# ---------------------------------------------------------------------------
+# İLETİŞİM FORMU E-POSTA GÖNDERİMİ (/api/contact) — Resend
+# Gizli anahtar repoda TUTULMAZ; Firebase Secret Manager'daki "resendApiKey" kullanılır.
+#   Anahtarı değiştirmek için:
+#     firebase apphosting:secrets:set resendApiKey --project aytekinsancaktutan-91874-c235e
+#     firebase apphosting:secrets:grantaccess resendApiKey --backend umitfettahoglu-f --project aytekinsancaktutan-91874-c235e
+#   (umitfettahoglu-f = bu repoya (ebulutdev/ceo4) bağlı backend)
+# Gönderim başarısız olursa form, ziyaretçiye e-posta önizlemesini (Gmail / Outlook) yedek olarak açar.
+# ---------------------------------------------------------------------------
+env:
+  - variable: RESEND_API_KEY
+    secret: resendApiKey
+    availability:
+      - RUNTIME
+  - variable: MAIL_FROM
+    value: form@fetsangrup.com
+    availability:
+      - RUNTIME
+  - variable: MAIL_TO_EXEC
+    value: umitfettahoglu@fetsangrup.com
+    availability:
+      - RUNTIME
+  - variable: MAIL_TO_INFO
+    value: iletisim@fetsangrup.com
+    availability:
+      - RUNTIME

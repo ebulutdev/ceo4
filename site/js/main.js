@@ -201,12 +201,16 @@
       if (!lag) anim.progress(p);
       else qp(p);
     };
-    function completeScene(self) {
+    function completeScene(self, soft) {
       if (done) return;
       done = true;
       st._done = true;
       if (autoSpeed > 0) gsap.ticker.remove(tickAuto);
-      go(1);
+      if (soft) {
+        // Geri kaydırmada sahne son hâline bir anda atlamaz; kalan kısım sakin bir geçişle tamamlanır
+        proxy.p = anim.progress();
+        gsap.to(proxy, { p: 1, duration: 0.7, ease: 'power2.inOut', overwrite: true, onUpdate: () => anim.progress(proxy.p) });
+      } else go(1);
       if (rest.onLeave) rest.onLeave(self);
       if (self.pin) queueCollapse(self);
     }
@@ -226,7 +230,7 @@
             }
           } else if (self.pin && maxP >= 0.88 && self.direction === -1 && maxY - self.scroll() > UP_TOL) {
             // Parmağı bırakırken oluşan küçük geri titreme sahneyi bitirmez; yalnızca gerçek geri kaydırma
-            completeScene(self);
+            completeScene(self, true);
           } else {
             go(self.progress);
           }
@@ -264,6 +268,10 @@
     if (autoSpeed > 0) gsap.ticker.add(tickAuto);
     return st;
   }
+
+  // Sabit sahnelerde kaydırmayı takip gecikmesi: dokunmatikte parmak hareketi kesik kesik geldiği için biraz
+  // daha uzun gecikme geçişleri yumuşatır (titrek / kesik animasyon hissi azalır)
+  const SCRUB = isTouch ? 0.45 : 0.25;
 
   // ---------- Lenis ----------
   lenis = new Lenis({ lerp: 0.13, smoothWheel: true, syncTouch: false });
@@ -410,7 +418,8 @@
       let targetP = 0, lastScrollP = 0, filmDone = false, filmMaxY = 0;
       // Kaynak index.html'de videonun hemen altındaki satır içi betikle erkenden atanır; burada yalnızca yedek
       if (!video.getAttribute('src')) video.src = isMob ? 'assets/film/hero-m.mp4' : 'assets/film/hero-d.mp4';
-      const MAX_RATE = isMob ? 2.6 : 3.4; // yüksek hızda mobil kod çözücü kare düşürür
+      // Mobilde en yüksek hız düşük tutulur: ileri hareket eden görüntünün hızlanması baş döndürür, kod çözücü de kare düşürür
+      const MAX_RATE = isMob ? 1.8 : 3.4;
       video.muted = true;
       video.playsInline = true;
       video.defaultPlaybackRate = BASE_RATE;
@@ -815,7 +824,9 @@
     const nums = $$('.story__track span', sec);
     const parts = (c) => ({ tag: $('.chapter__tag', c), title: $('.chapter__title .mask > span', c), line: $('.chapter__line', c) });
 
-    gsap.set(imgs.slice(1), { clipPath: 'inset(100% 0% 0% 0%)' });
+    // Görseller alttan perde (clip-path) yerine yumuşak çapraz geçişle (opacity) değişir: clip-path her karede tam
+    // ekran görseli yeniden boyatıyordu (mobilde kasma); opacity yalnızca GPU'da birleştirilir ve göze daha sakin gelir
+    gsap.set(imgs.slice(1), { autoAlpha: 0 });
     gsap.set(chs.slice(1), { autoAlpha: 0 });
     chs.forEach((c, i) => {
       const p = parts(c);
@@ -826,15 +837,17 @@
     });
 
     const steps = chs.slice(1).map((_, i) => i + 1 - 0.33);
-    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false }, onUpdate: stepper('story', steps) });
+    const tl = gsap.timeline({ defaults: { ease: 'power2.inOut', immediateRender: false }, onUpdate: stepper('story', steps) });
     fwd(tl, {
       trigger: sec, start: 'top top',
       end: () => `+=${chs.length * 75}%`,
-      pin: '.story__pin', anticipatePin: 1, scrub: 0.25,
+      pin: '.story__pin', anticipatePin: 1, scrub: SCRUB,
       invalidateOnRefresh: true,
     });
+    // Hafif yaklaşma (ken burns) mobilde daha az: büyük ölçek değişimi küçük ekranda baş döndürücü olabiliyor
+    const KB = isTouch ? 1.035 : 1.08;
     imgs.forEach((im, i) => {
-      tl.fromTo($('img', im), { scale: 1.08 }, { scale: 1, duration: 1, ease: 'none' }, i ? i - 0.25 : 0);
+      tl.fromTo($('img', im), { scale: KB }, { scale: 1, duration: 1, ease: 'none' }, i ? i - 0.25 : 0);
     });
     for (let i = 1; i < chs.length; i++) {
       const a = parts(chs[i - 1]), b = parts(chs[i]);
@@ -842,7 +855,7 @@
       tl.fromTo([a.tag, a.line], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -12, duration: 0.16 }, t)
         .fromTo(a.title, { yPercent: 0 }, { yPercent: -150, duration: 0.22 }, t + 0.02)
         .set(chs[i - 1], { autoAlpha: 0 }, t + 0.24)
-        .fromTo(imgs[i], { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.36 }, t + 0.04)
+        .fromTo(imgs[i], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.42, ease: 'power1.inOut' }, t + 0.02)
         .fromTo(nums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.28 }, t + 0.06)
         .set(chs[i], { autoAlpha: 1 }, t + 0.14)
         .fromTo(b.title, { yPercent: 150 }, { yPercent: 0, duration: 0.28 }, t + 0.14)
@@ -868,11 +881,11 @@
     });
 
     const steps = items.slice(1).map((_, i) => i + 1 - 0.33);
-    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false }, onUpdate: stepper('lead', steps) });
+    const tl = gsap.timeline({ defaults: { ease: 'power2.inOut', immediateRender: false }, onUpdate: stepper('lead', steps) });
     fwd(tl, {
       trigger: sec, start: 'top top',
       end: () => `+=${items.length * 65}%`,
-      pin: '.lead__pin', anticipatePin: 1, scrub: 0.25,
+      pin: '.lead__pin', anticipatePin: 1, scrub: SCRUB,
       invalidateOnRefresh: true,
     });
     tl.to({}, { duration: 0.45 }, 0);
@@ -942,10 +955,16 @@
     }
 
     let cityDone = false, maxCityP = 0, maxCityY = 0;
-    function finishCity(st) {
+    function finishCity(st, soft) {
       if (cityDone) return;
       cityDone = true;
       st._done = true;
+      if (soft && prog < 1) {
+        // Geri kaydırmada kent son hâline bir anda atlamaz: kalan fazlar kısa ve sakin bir geçişle tamamlanır
+        const o = { p: prog };
+        gsap.to(o, { p: 1, duration: 0.9, ease: 'power2.inOut', onUpdate: () => update(o.p), onComplete: () => queueCollapse(st) });
+        return;
+      }
       update(1);
       queueCollapse(st);
     }
@@ -959,7 +978,7 @@
         maxCityP = Math.max(maxCityP, self.progress);
         maxCityY = Math.max(maxCityY, self.scroll());
         if (maxCityP >= 0.88 && self.direction === -1 && maxCityY - self.scroll() > UP_TOL) {
-          finishCity(self);
+          finishCity(self, true);
         } else {
           update(self.progress);
         }
@@ -1041,7 +1060,8 @@
     });
 
     // Görsel kart içinde hafif paralaks ile kayar; kart metinleri her zaman görünür ve net kalır
-    cards.forEach((c) => {
+    // Dokunmatikte iç paralaks yok: kart zaten yatay akıyor, görselin ayrıca farklı hızda kayması göz yoruyordu
+    if (!touchCat) cards.forEach((c) => {
       gsap.fromTo($('.cat__media img', c), { xPercent: -4 }, {
         xPercent: 4, ease: 'none',
         scrollTrigger: { trigger: c, containerAnimation: slide, start: 'left right', end: 'right left', scrub: true },
@@ -1065,17 +1085,20 @@
     gsap.set(caps.slice(1), { autoAlpha: 0, y: 10 });
 
     const steps = [];
-    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut', immediateRender: false }, onUpdate: stepper('quote', steps) });
+    const qNums = $$('.quotes__track span');
+    const tl = gsap.timeline({ defaults: { ease: 'power2.inOut', immediateRender: false }, onUpdate: stepper('quote', steps) });
     fwd(tl, {
       trigger: '.quotes', start: 'top top',
       end: () => `+=${quotes.length * 65}%`,
-      pin: '.quotes__pin', anticipatePin: 1, scrub: 0.25,
+      pin: '.quotes__pin', anticipatePin: 1, scrub: SCRUB,
       invalidateOnRefresh: true,
     });
     tl.to({}, { duration: 0.45 });
     for (let i = 1; i < quotes.length; i++) {
       steps.push(tl.duration() + 0.05);
-      tl.fromTo(sets[i - 1], { yPercent: 0 }, { yPercent: -150, duration: 0.45, stagger: 0.015 })
+      // Alt sayaç (01 / 04) söz değişimiyle birlikte kayar
+      if (qNums.length) tl.fromTo(qNums, { yPercent: -100 * (i - 1) }, { yPercent: -100 * i, duration: 0.6 }, tl.duration() + 0.15);
+      tl.fromTo(sets[i - 1], { yPercent: 0 }, { yPercent: -150, duration: 0.45, stagger: 0.015 }, '<-0.15')
         .fromTo(caps[i - 1], { autoAlpha: 1, y: 0 }, { autoAlpha: 0, y: -8, duration: 0.24 }, '<')
         .set(quotes[i - 1], { autoAlpha: 0 })
         .set(quotes[i], { autoAlpha: 1 })
@@ -1525,8 +1548,47 @@
       const t = type();
       const data = {};
       fields.forEach((el) => { if (el.type !== 'checkbox' && el.value.trim()) data[el.name] = el.value.trim(); });
+
+      // 1) Önce doğrudan gönderim: sunucu (/api/contact) e-postayı kurumsal adrese kendisi iletir.
+      // 2) Sunucuda e-posta ayarı yoksa (delivered: false), hata ya da bağlantı sorunu olursa bugünkü
+      //    önizleme (Gmail / Outlook / e-posta uygulaması) yedek olarak açılır; talep kaybolmaz.
+      if (sending) return;
+      sending = true;
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+      status.textContent = 'Gönderiliyor…';
+      let result = null;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        const r = await fetch('/api/contact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...data, tur: TITLE[t], website: form.website.value }),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        result = { status: r.status, body: await r.json().catch(() => ({})) };
+      } catch (err) { result = null; }
+      sending = false;
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+
+      if (result && result.status === 200 && result.body.ok && result.body.delivered !== false) {
+        form.reset();
+        $$('.field', form).forEach((f) => f.classList.remove('has-value', 'is-invalid'));
+        applyType(false);
+        status.textContent = 'Teşekkürler, mesajınız iletildi. En kısa sürede size dönüş yapılacaktır.';
+        return;
+      }
+      if (result && result.status === 400) {
+        status.textContent = result.body.error || 'Lütfen zorunlu alanları eksiksiz doldurun.';
+        return;
+      }
+      status.textContent = '';
       openPreview(t, data);
     });
+    let sending = false;
 
     // ---- Gönderim önizlemesi (Gmail / Outlook / e-posta uygulaması) ----
     const dlg = $('.mailprev');
