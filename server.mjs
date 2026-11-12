@@ -1,6 +1,6 @@
 // Firebase App Hosting için statik dosya ve iletişim formu (/api/contact) sunucusu.
 // Ortam değişkenlerini (.env veya apphosting.yaml) okur ve "Gönderen Adı + Reply-To" tekniğiyle
-// talepleri doğrudan umitfettahoglu@fetsangrup.com / iletisim@fetsangrup.com adreslerine iletir.
+// talepleri doğrudan umitfettahoglu@fetsangrup.com / info@fetsangrup.com adreslerine iletir.
 import http from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { join, normalize, extname, sep } from 'node:path';
@@ -159,14 +159,14 @@ async function handleContact(req, res) {
   const isExec = tur === 'İş Birliği' || tur === 'Yatırım';
   const toEmail = isExec
     ? (process.env.MAIL_TO_EXEC || 'umitfettahoglu@fetsangrup.com')
-    : (process.env.MAIL_TO_INFO || 'iletisim@fetsangrup.com');
+    : (process.env.MAIL_TO_INFO || 'info@fetsangrup.com');
 
   const fromEmail = process.env.MAIL_FROM || process.env.SMTP_USER || 'form@fetsangrup.com';
 
   // 3 Başlık (Header) Tekniği:
   // 1. From: "Ahmet Yılmaz (Web Formu)" <form@fetsangrup.com> -> Gelen kutusunda kişinin adı görünür, spama düşmez
   // 2. Reply-To: "Ahmet Yılmaz" <ahmet@gmail.com> -> Outlook'ta "Yanıtla" deyince doğrudan kullanıcının mailine gider
-  // 3. To: umitfettahoglu@fetsangrup.com / iletisim@fetsangrup.com
+  // 3. To: umitfettahoglu@fetsangrup.com / info@fetsangrup.com
   const fromHeader = `"${ad} (Web Formu)" <${fromEmail}>`;
   const replyToHeader = `"${ad}" <${eposta}>`;
   const subject = `[${tur}] ${ad} — umitfettahoglu.com`;

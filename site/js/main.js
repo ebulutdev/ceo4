@@ -1480,7 +1480,7 @@
     const status = $('.form__status', form);
     const btn = $('.btn', form);
     const blocks = $$('[data-for]', form);
-    const RECIPIENT = { genel: 'iletisim@fetsangrup.com', basin: 'iletisim@fetsangrup.com', isbirligi: 'umitfettahoglu@fetsangrup.com', yatirim: 'umitfettahoglu@fetsangrup.com' };
+    const RECIPIENT = { genel: 'info@fetsangrup.com', basin: 'info@fetsangrup.com', isbirligi: 'umitfettahoglu@fetsangrup.com', yatirim: 'umitfettahoglu@fetsangrup.com' };
     const TITLE = { genel: 'Genel', isbirligi: 'İş Birliği', yatirim: 'Yatırım', basin: 'Basın & Medya' };
     const LABEL = { ad: 'Ad Soyad', eposta: 'E-posta', telefon: 'Telefon', firma: 'Firma / Kurum', bolge: 'Bölge / İlçe', konu: 'İş birliği konusu', yatirimTipi: 'Yatırım tipi', butce: 'Bütçe aralığı', mesaj: 'Mesaj' };
 

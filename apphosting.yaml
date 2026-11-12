@@ -29,6 +29,6 @@ env:
     availability:
       - RUNTIME
   - variable: MAIL_TO_INFO
-    value: iletisim@fetsangrup.com
+    value: info@fetsangrup.com
     availability:
       - RUNTIME
